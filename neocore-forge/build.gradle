@@ -48,6 +48,33 @@ tasks.withType(JavaCompile).configureEach {
     options.release = 21
 }
 
+def bundledNativeLibrary = rootProject.file('../neocore-native/build/vm_bridge.dll')
+def bundledNativeResourceRoot = layout.buildDirectory.dir('generated/native-resources')
+
+tasks.register('stageBundledNatives', Copy) {
+    from(bundledNativeLibrary)
+    into(bundledNativeResourceRoot.map { it.dir('natives/windows-x86_64') })
+
+    doFirst {
+        if (!bundledNativeLibrary.exists()) {
+            throw new GradleException(
+                "Missing bundled native library: ${bundledNativeLibrary}. " +
+                "Build neocore-native first (cmake -S neocore-native -B neocore-native/build && cmake --build neocore-native/build)."
+            )
+        }
+    }
+}
+
+sourceSets {
+    main {
+        resources.srcDir(bundledNativeResourceRoot)
+    }
+}
+
+tasks.named('processResources') {
+    dependsOn tasks.named('stageBundledNatives')
+}
+
 def neoCompModsDir = file('C:/Users/ivan/AppData/Roaming/.minecraft/versions/NeoComp/mods')
 
 tasks.named('jar', Jar) {

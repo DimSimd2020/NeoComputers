@@ -1,6 +1,9 @@
 #include "panama-bridge/include/vm_bridge.h"
 
+#include <jni.h>
+
 #include <cstdlib>
+#include <cstdint>
 #include <iostream>
 #include <limits>
 #include <new>
@@ -56,4 +59,26 @@ void destroy_vm(VmInstance *vm) {
   vm->memory = nullptr;
   vm->memory_size_bytes = 0;
   delete vm;
+}
+
+extern "C" JNIEXPORT jlong JNICALL Java_com_dimsimd_neocomputers_vm_JniVmBridge_createVm(
+    JNIEnv *, jobject, jint memory_size_mb) {
+  if (memory_size_mb < 0) {
+    return 0;
+  }
+
+  VmInstance *vm = create_vm(static_cast<size_t>(memory_size_mb));
+  return static_cast<jlong>(reinterpret_cast<intptr_t>(vm));
+}
+
+extern "C" JNIEXPORT void JNICALL Java_com_dimsimd_neocomputers_vm_JniVmBridge_tickVm(
+    JNIEnv *, jobject, jlong handle) {
+  VmInstance *vm = reinterpret_cast<VmInstance *>(static_cast<intptr_t>(handle));
+  tick_vm(vm);
+}
+
+extern "C" JNIEXPORT void JNICALL Java_com_dimsimd_neocomputers_vm_JniVmBridge_destroyVm(
+    JNIEnv *, jobject, jlong handle) {
+  VmInstance *vm = reinterpret_cast<VmInstance *>(static_cast<intptr_t>(handle));
+  destroy_vm(vm);
 }
