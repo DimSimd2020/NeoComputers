@@ -1,0 +1,25 @@
+modLoader="javafml"
+loaderVersion="[1,)"
+license="All Rights Reserved"
+
+[[mods]]
+modId="neocomputers"
+version="0.1.0"
+displayName="NeoComputers"
+description='''
+NeoForge integration layer for native NeoComputers VM instances.
+'''
+
+[[dependencies.neocomputers]]
+modId="neoforge"
+type="required"
+versionRange="[21.0.167,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.neocomputers]]
+modId="minecraft"
+type="required"
+versionRange="[1.21]"
+ordering="NONE"
+side="BOTH"
