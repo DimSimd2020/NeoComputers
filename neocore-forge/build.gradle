@@ -4,21 +4,13 @@ plugins {
 }
 
 version = '0.1.0'
-group = 'com.vibecoder.neocomputers'
+group = 'com.dimsimd.neocomputers'
 
 base {
     archivesName = 'neocomputers'
 }
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
-
-sourceSets {
-    main {
-        java {
-            srcDir '../panama-bridge/java'
-        }
-    }
-}
 
 neoForge {
     version = '21.0.167'
@@ -39,8 +31,6 @@ neoForge {
         }
 
         configureEach {
-            jvmArgument '--enable-native-access=ALL-UNNAMED'
-            jvmArgument '--enable-preview'
             systemProperty 'forge.logging.markers', 'REGISTRIES'
             logLevel = org.slf4j.event.Level.DEBUG
         }
@@ -56,13 +46,21 @@ neoForge {
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
     options.release = 21
-    options.compilerArgs.addAll(['--enable-preview'])
 }
 
-tasks.withType(JavaExec).configureEach {
-    jvmArgs '--enable-native-access=ALL-UNNAMED', '--enable-preview'
+def neoCompModsDir = file('C:/Users/ivan/AppData/Roaming/.minecraft/versions/NeoComp/mods')
+
+tasks.named('jar', Jar) {
+    archiveVersion = ''
 }
 
-tasks.withType(Test).configureEach {
-    jvmArgs '--enable-native-access=ALL-UNNAMED', '--enable-preview'
+tasks.register('deployToNeoCompMods', Copy) {
+    dependsOn tasks.named('jar')
+
+    from(tasks.named('jar'))
+    into(neoCompModsDir)
+}
+
+tasks.named('build') {
+    finalizedBy(tasks.named('deployToNeoCompMods'))
 }

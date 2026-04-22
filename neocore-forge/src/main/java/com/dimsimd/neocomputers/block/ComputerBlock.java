@@ -1,7 +1,7 @@
-package com.vibecoder.neocomputers.block;
+package com.dimsimd.neocomputers.block;
 
 import com.mojang.serialization.MapCodec;
-import com.vibecoder.neocomputers.NeoComputers;
+import com.dimsimd.neocomputers.NeoComputers;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;

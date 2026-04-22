@@ -1,12 +1,9 @@
-package com.vibecoder.neocomputers;
+package com.dimsimd.neocomputers;
 
 import com.mojang.logging.LogUtils;
-import com.vibecoder.neocomputers.block.ComputerBlock;
-import com.vibecoder.neocomputers.block.ComputerBlockEntity;
-import com.vibecoder.neocomputers.vm.NativeVmRuntime;
-import com.vibecoder.neocomputers.vm.VmBridgeContract;
-import java.lang.foreign.Linker;
-import java.lang.foreign.SymbolLookup;
+import com.dimsimd.neocomputers.block.ComputerBlock;
+import com.dimsimd.neocomputers.block.ComputerBlockEntity;
+import com.dimsimd.neocomputers.vm.NativeVmRuntime;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.BlockItem;
@@ -74,10 +71,12 @@ public final class NeoComputers {
     }
 
     private static void initializeNativeBridge() {
-        System.loadLibrary(NATIVE_LIBRARY_NAME);
-        Object downcalls = VmBridgeContract.createDowncalls(Linker.nativeLinker(), SymbolLookup.loaderLookup());
-        NativeVmRuntime.installDowncalls(downcalls);
-        LOGGER.info("Loaded native NeoComputers VM library '{}'", NATIVE_LIBRARY_NAME);
+        boolean initialized = NativeVmRuntime.initialize(NATIVE_LIBRARY_NAME, LOGGER);
+        if (initialized) {
+            LOGGER.info("Native NeoComputers VM bridge is active");
+        } else {
+            LOGGER.warn("Native NeoComputers VM bridge is unavailable, computer blocks run in inert mode");
+        }
     }
 
     private static void addCreativeModeItems(BuildCreativeModeTabContentsEvent event) {

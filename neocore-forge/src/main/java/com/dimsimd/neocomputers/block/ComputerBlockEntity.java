@@ -1,8 +1,7 @@
-package com.vibecoder.neocomputers.block;
+package com.dimsimd.neocomputers.block;
 
-import com.vibecoder.neocomputers.NeoComputers;
-import com.vibecoder.neocomputers.vm.NativeVmRuntime;
-import java.lang.foreign.MemorySegment;
+import com.dimsimd.neocomputers.NeoComputers;
+import com.dimsimd.neocomputers.vm.NativeVmRuntime;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -11,7 +10,7 @@ import net.minecraft.world.level.block.state.BlockState;
 public final class ComputerBlockEntity extends BlockEntity {
     private static final int VM_MEMORY_MEGABYTES = 512;
 
-    private MemorySegment vmHandle = MemorySegment.NULL;
+    private long vmHandle = 0L;
 
     public ComputerBlockEntity(BlockPos pos, BlockState blockState) {
         super(NeoComputers.COMPUTER_BLOCK_ENTITY.get(), pos, blockState);
@@ -26,8 +25,8 @@ public final class ComputerBlockEntity extends BlockEntity {
             return;
         }
 
-        MemorySegment handle = vmHandle;
-        vmHandle = MemorySegment.NULL;
+        long handle = vmHandle;
+        vmHandle = 0L;
         NativeVmRuntime.destroyVm(handle);
     }
 
@@ -38,6 +37,9 @@ public final class ComputerBlockEntity extends BlockEntity {
     }
 
     private void tickServer() {
+        if (!NativeVmRuntime.isAvailable()) {
+            return;
+        }
         ensureVm();
         NativeVmRuntime.tickVm(vmHandle);
     }
@@ -47,8 +49,8 @@ public final class ComputerBlockEntity extends BlockEntity {
             return;
         }
 
-        MemorySegment createdVm = NativeVmRuntime.createVm(VM_MEMORY_MEGABYTES);
-        if (createdVm == MemorySegment.NULL) {
+        long createdVm = NativeVmRuntime.createVm(VM_MEMORY_MEGABYTES);
+        if (createdVm == 0L) {
             throw new IllegalStateException("Native create_vm returned NULL for computer at " + worldPosition);
         }
 
@@ -56,6 +58,6 @@ public final class ComputerBlockEntity extends BlockEntity {
     }
 
     private boolean hasVm() {
-        return vmHandle != MemorySegment.NULL;
+        return vmHandle != 0L;
     }
 }
