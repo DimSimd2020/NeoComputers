@@ -1,6 +1,11 @@
 {
-  "parent": "minecraft:block/cube_all",
+  "parent": "minecraft:block/cube",
   "textures": {
-    "all": "minecraft:block/iron_block"
+    "down": "neocomputers:block/computer_side",
+    "up": "neocomputers:block/computer_top",
+    "north": "neocomputers:block/computer_front",
+    "south": "neocomputers:block/computer_back",
+    "west": "neocomputers:block/computer_side",
+    "east": "neocomputers:block/computer_side"
   }
 }
