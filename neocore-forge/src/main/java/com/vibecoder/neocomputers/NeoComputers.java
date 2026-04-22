@@ -1,0 +1,88 @@
+package com.vibecoder.neocomputers;
+
+import com.mojang.logging.LogUtils;
+import com.vibecoder.neocomputers.block.ComputerBlock;
+import com.vibecoder.neocomputers.block.ComputerBlockEntity;
+import com.vibecoder.neocomputers.vm.NativeVmRuntime;
+import com.vibecoder.neocomputers.vm.VmBridgeContract;
+import java.lang.foreign.Linker;
+import java.lang.foreign.SymbolLookup;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.CreativeModeTab;
+import net.minecraft.world.item.CreativeModeTabs;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.level.block.SoundType;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.world.level.material.MapColor;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.ModContainer;
+import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
+import net.neoforged.neoforge.registries.DeferredBlock;
+import net.neoforged.neoforge.registries.DeferredHolder;
+import net.neoforged.neoforge.registries.DeferredItem;
+import net.neoforged.neoforge.registries.DeferredRegister;
+import org.slf4j.Logger;
+
+@Mod(NeoComputers.MOD_ID)
+public final class NeoComputers {
+    public static final String MOD_ID = "neocomputers";
+    private static final String NATIVE_LIBRARY_NAME = "neocore_native";
+    private static final Logger LOGGER = LogUtils.getLogger();
+
+    public static final DeferredRegister.Blocks BLOCKS = DeferredRegister.createBlocks(MOD_ID);
+    public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(MOD_ID);
+    public static final DeferredRegister<BlockEntityType<?>> BLOCK_ENTITY_TYPES = DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE, MOD_ID);
+    public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS = DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MOD_ID);
+
+    public static final DeferredBlock<ComputerBlock> COMPUTER_BLOCK = BLOCKS.register("computer", () -> new ComputerBlock(
+        BlockBehaviour.Properties.of()
+            .mapColor(MapColor.METAL)
+            .strength(2.0F, 6.0F)
+            .sound(SoundType.METAL)
+            .requiresCorrectToolForDrops()
+    ));
+
+    public static final DeferredItem<BlockItem> COMPUTER_BLOCK_ITEM = ITEMS.register("computer", () -> new BlockItem(
+        COMPUTER_BLOCK.get(),
+        new Item.Properties()
+    ));
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<ComputerBlockEntity>> COMPUTER_BLOCK_ENTITY = BLOCK_ENTITY_TYPES.register(
+        "computer",
+        () -> BlockEntityType.Builder.of(ComputerBlockEntity::new, COMPUTER_BLOCK.get()).build(null)
+    );
+
+    public static final DeferredHolder<CreativeModeTab, CreativeModeTab> COMPUTER_TAB = CREATIVE_MODE_TABS.register("computers", () -> CreativeModeTab.builder()
+        .title(Component.translatable("itemGroup.neocomputers"))
+        .withTabsBefore(CreativeModeTabs.FUNCTIONAL_BLOCKS)
+        .icon(() -> COMPUTER_BLOCK_ITEM.get().getDefaultInstance())
+        .displayItems((parameters, output) -> output.accept(COMPUTER_BLOCK_ITEM.get()))
+        .build());
+
+    public NeoComputers(IEventBus modEventBus, ModContainer modContainer) {
+        initializeNativeBridge();
+
+        BLOCKS.register(modEventBus);
+        ITEMS.register(modEventBus);
+        BLOCK_ENTITY_TYPES.register(modEventBus);
+        CREATIVE_MODE_TABS.register(modEventBus);
+        modEventBus.addListener(NeoComputers::addCreativeModeItems);
+    }
+
+    private static void initializeNativeBridge() {
+        System.loadLibrary(NATIVE_LIBRARY_NAME);
+        Object downcalls = VmBridgeContract.createDowncalls(Linker.nativeLinker(), SymbolLookup.loaderLookup());
+        NativeVmRuntime.installDowncalls(downcalls);
+        LOGGER.info("Loaded native NeoComputers VM library '{}'", NATIVE_LIBRARY_NAME);
+    }
+
+    private static void addCreativeModeItems(BuildCreativeModeTabContentsEvent event) {
+        if (event.getTabKey() == CreativeModeTabs.FUNCTIONAL_BLOCKS) {
+            event.accept(COMPUTER_BLOCK_ITEM.get());
+        }
+    }
+}
