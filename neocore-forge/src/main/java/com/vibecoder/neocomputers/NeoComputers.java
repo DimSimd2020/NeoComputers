@@ -30,7 +30,7 @@ import org.slf4j.Logger;
 @Mod(NeoComputers.MOD_ID)
 public final class NeoComputers {
     public static final String MOD_ID = "neocomputers";
-    private static final String NATIVE_LIBRARY_NAME = "neocore_native";
+    private static final String NATIVE_LIBRARY_NAME = "vm_bridge";
     private static final Logger LOGGER = LogUtils.getLogger();
 
     public static final DeferredRegister.Blocks BLOCKS = DeferredRegister.createBlocks(MOD_ID);
