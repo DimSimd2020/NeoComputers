@@ -1,5 +1,15 @@
 {
   "itemGroup.neocomputers": "NeoComputers",
   "block.neocomputers.computer": "Computer",
-  "item.neocomputers.computer": "Computer"
+  "item.neocomputers.computer": "Computer",
+  "item.neocomputers.cpu_tier1": "Neo Celeron",
+  "item.neocomputers.cpu_tier2": "Neo Core i3",
+  "item.neocomputers.cpu_tier3": "Neo Threadripper",
+  "item.neocomputers.ram_ddr3": "DDR3 Memory Module",
+  "item.neocomputers.ram_ddr4": "DDR4 Memory Module",
+  "item.neocomputers.ram_ddr5": "DDR5 Memory Module",
+  "item.neocomputers.motherboard_matx": "Micro-ATX Motherboard",
+  "item.neocomputers.motherboard_atx": "ATX Motherboard",
+  "item.neocomputers.gpu_basic": "Basic GPU",
+  "item.neocomputers.network_card": "Network Card"
 }

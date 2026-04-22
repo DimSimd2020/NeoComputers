@@ -3,6 +3,8 @@ package com.dimsimd.neocomputers;
 import com.mojang.logging.LogUtils;
 import com.dimsimd.neocomputers.block.ComputerBlock;
 import com.dimsimd.neocomputers.block.ComputerBlockEntity;
+import com.dimsimd.neocomputers.component.NeoComponents;
+import com.dimsimd.neocomputers.item.ItemDeferredRegister;
 import com.dimsimd.neocomputers.vm.NativeVmRuntime;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
@@ -57,7 +59,19 @@ public final class NeoComputers {
         .title(Component.translatable("itemGroup.neocomputers"))
         .withTabsBefore(CreativeModeTabs.FUNCTIONAL_BLOCKS)
         .icon(() -> COMPUTER_BLOCK_ITEM.get().getDefaultInstance())
-        .displayItems((parameters, output) -> output.accept(COMPUTER_BLOCK_ITEM.get()))
+        .displayItems((parameters, output) -> {
+            output.accept(COMPUTER_BLOCK_ITEM.get());
+            output.accept(ItemDeferredRegister.CPU_TIER1.get());
+            output.accept(ItemDeferredRegister.CPU_TIER2.get());
+            output.accept(ItemDeferredRegister.CPU_TIER3.get());
+            output.accept(ItemDeferredRegister.RAM_DDR3.get());
+            output.accept(ItemDeferredRegister.RAM_DDR4.get());
+            output.accept(ItemDeferredRegister.RAM_DDR5.get());
+            output.accept(ItemDeferredRegister.MOTHERBOARD_MATX.get());
+            output.accept(ItemDeferredRegister.MOTHERBOARD_ATX.get());
+            output.accept(ItemDeferredRegister.GPU_BASIC.get());
+            output.accept(ItemDeferredRegister.NETWORK_CARD.get());
+        })
         .build());
 
     public NeoComputers(IEventBus modEventBus, ModContainer modContainer) {
@@ -65,6 +79,8 @@ public final class NeoComputers {
 
         BLOCKS.register(modEventBus);
         ITEMS.register(modEventBus);
+        ItemDeferredRegister.register(modEventBus);
+        NeoComponents.register(modEventBus);
         BLOCK_ENTITY_TYPES.register(modEventBus);
         CREATIVE_MODE_TABS.register(modEventBus);
         modEventBus.addListener(NeoComputers::addCreativeModeItems);
@@ -82,6 +98,18 @@ public final class NeoComputers {
     private static void addCreativeModeItems(BuildCreativeModeTabContentsEvent event) {
         if (event.getTabKey() == CreativeModeTabs.FUNCTIONAL_BLOCKS) {
             event.accept(COMPUTER_BLOCK_ITEM.get());
+        }
+        if (event.getTabKey() == CreativeModeTabs.INGREDIENTS) {
+            event.accept(ItemDeferredRegister.CPU_TIER1.get());
+            event.accept(ItemDeferredRegister.CPU_TIER2.get());
+            event.accept(ItemDeferredRegister.CPU_TIER3.get());
+            event.accept(ItemDeferredRegister.RAM_DDR3.get());
+            event.accept(ItemDeferredRegister.RAM_DDR4.get());
+            event.accept(ItemDeferredRegister.RAM_DDR5.get());
+            event.accept(ItemDeferredRegister.MOTHERBOARD_MATX.get());
+            event.accept(ItemDeferredRegister.MOTHERBOARD_ATX.get());
+            event.accept(ItemDeferredRegister.GPU_BASIC.get());
+            event.accept(ItemDeferredRegister.NETWORK_CARD.get());
         }
     }
 }
