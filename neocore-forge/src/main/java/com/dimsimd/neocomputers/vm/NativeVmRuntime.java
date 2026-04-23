@@ -12,10 +12,13 @@ import org.slf4j.Logger;
 
 public final class NativeVmRuntime {
     private static final String NATIVE_PATH_PROPERTY = "neocomputers.native.path";
+    private static final String BACKEND_PROPERTY = "neocomputers.vm.backend";
+    private static final String BACKEND_ENV = "NEOCOMPUTERS_VM_BACKEND";
     private static final String SHA_256 = "SHA-256";
     private static final String BUNDLED_NATIVE_ROOT = "natives";
     private static final VmBridge BRIDGE = new JniVmBridge();
     private static volatile boolean available;
+    private static volatile Backend backend = Backend.QEMU;
 
     private NativeVmRuntime() {
     }
@@ -23,6 +26,12 @@ public final class NativeVmRuntime {
     public static boolean initialize(String nativeLibraryName, Logger logger) {
         Objects.requireNonNull(nativeLibraryName, "nativeLibraryName");
         Objects.requireNonNull(logger, "logger");
+
+        backend = configuredBackend();
+        if (backend == Backend.QEMU) {
+            available = QemuVmRuntime.initialize(logger);
+            return available;
+        }
 
         try {
             loadNativeLibrary(nativeLibraryName, logger);
@@ -33,7 +42,7 @@ public final class NativeVmRuntime {
         }
 
         try {
-            long handle = BRIDGE.createVm(1);
+            long handle = BRIDGE.createVm(1, 1, "");
             if (handle != VmBridge.NULL_HANDLE) {
                 BRIDGE.destroyVm(handle);
             }
@@ -194,12 +203,23 @@ public final class NativeVmRuntime {
         return available;
     }
 
-    public static long createVm(int memorySizeMb) {
+    public static boolean usesQemuBackend() {
+        return backend == Backend.QEMU;
+    }
+
+    public static String qemuDiskPrefix() {
+        return QemuVmRuntime.diskPrefix();
+    }
+
+    public static long createVm(int memorySizeMb, int diskSizeMb, String diskImage) {
         if (!available) {
             return VmBridge.NULL_HANDLE;
         }
+        if (backend == Backend.QEMU) {
+            return QemuVmRuntime.createVm(memorySizeMb, diskSizeMb, diskImage);
+        }
         try {
-            return BRIDGE.createVm(memorySizeMb);
+            return BRIDGE.createVm(memorySizeMb, diskSizeMb, diskImage == null ? "" : diskImage);
         } catch (Throwable throwable) {
             throw new IllegalStateException("JNI createVm failed", throwable);
         }
@@ -209,6 +229,10 @@ public final class NativeVmRuntime {
         if (!available || handle == VmBridge.NULL_HANDLE) {
             return;
         }
+        if (backend == Backend.QEMU) {
+            QemuVmRuntime.tickVm(handle);
+            return;
+        }
         try {
             BRIDGE.tickVm(handle);
         } catch (Throwable throwable) {
@@ -216,8 +240,83 @@ public final class NativeVmRuntime {
         }
     }
 
+    public static void submitCommand(long handle, String command) {
+        if (!available || handle == VmBridge.NULL_HANDLE) {
+            return;
+        }
+        if (backend == Backend.QEMU) {
+            QemuVmRuntime.submitCommand(handle, command);
+            return;
+        }
+        try {
+            BRIDGE.submitCommand(handle, command == null ? "" : command);
+        } catch (Throwable throwable) {
+            throw new IllegalStateException("JNI submitCommand failed", throwable);
+        }
+    }
+
+    public static String diskImage(long handle) {
+        if (backend == Backend.QEMU) {
+            return QemuVmRuntime.diskImage(handle);
+        }
+        return readString(handle, BRIDGE::diskImage, "diskImage");
+    }
+
+    public static String terminalSnapshot(long handle) {
+        if (backend == Backend.QEMU) {
+            return QemuVmRuntime.terminalSnapshot(handle);
+        }
+        return readString(handle, BRIDGE::terminalSnapshot, "terminalSnapshot");
+    }
+
+    public static String framebufferSnapshot(long handle) {
+        if (backend == Backend.QEMU) {
+            return QemuVmRuntime.framebufferSnapshot(handle);
+        }
+        return readString(handle, BRIDGE::framebufferSnapshot, "framebufferSnapshot");
+    }
+
+    public static String installedOs(long handle) {
+        if (backend == Backend.QEMU) {
+            return QemuVmRuntime.installedOs(handle);
+        }
+        return readString(handle, BRIDGE::installedOs, "installedOs");
+    }
+
+    public static boolean isHalted(long handle) {
+        if (!available || handle == VmBridge.NULL_HANDLE) {
+            return true;
+        }
+        if (backend == Backend.QEMU) {
+            return QemuVmRuntime.isHalted(handle);
+        }
+        try {
+            return BRIDGE.isHalted(handle);
+        } catch (Throwable throwable) {
+            throw new IllegalStateException("JNI isHalted failed", throwable);
+        }
+    }
+
+    public static int bootCount(long handle) {
+        if (!available || handle == VmBridge.NULL_HANDLE) {
+            return 0;
+        }
+        if (backend == Backend.QEMU) {
+            return QemuVmRuntime.bootCount(handle);
+        }
+        try {
+            return BRIDGE.bootCount(handle);
+        } catch (Throwable throwable) {
+            throw new IllegalStateException("JNI bootCount failed", throwable);
+        }
+    }
+
     public static void destroyVm(long handle) {
         if (!available || handle == VmBridge.NULL_HANDLE) {
+            return;
+        }
+        if (backend == Backend.QEMU) {
+            QemuVmRuntime.destroyVm(handle);
             return;
         }
         try {
@@ -225,5 +324,38 @@ public final class NativeVmRuntime {
         } catch (Throwable throwable) {
             throw new IllegalStateException("JNI destroyVm failed", throwable);
         }
+    }
+
+    private static String readString(long handle, VmStringReader reader, String operation) {
+        if (!available || handle == VmBridge.NULL_HANDLE) {
+            return "";
+        }
+        try {
+            String value = reader.read(handle);
+            return value == null ? "" : value;
+        } catch (Throwable throwable) {
+            throw new IllegalStateException("JNI " + operation + " failed", throwable);
+        }
+    }
+
+    @FunctionalInterface
+    private interface VmStringReader {
+        String read(long handle);
+    }
+
+    private static Backend configuredBackend() {
+        String configured = System.getProperty(BACKEND_PROPERTY);
+        if (configured == null || configured.isBlank()) {
+            configured = System.getenv(BACKEND_ENV);
+        }
+        if (configured != null && configured.equalsIgnoreCase("native")) {
+            return Backend.NATIVE;
+        }
+        return Backend.QEMU;
+    }
+
+    private enum Backend {
+        QEMU,
+        NATIVE
     }
 }

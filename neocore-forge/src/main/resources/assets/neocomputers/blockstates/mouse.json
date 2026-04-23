@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "facing=north": { "model": "neocomputers:block/mouse" },
+    "facing=east": { "model": "neocomputers:block/mouse", "y": 90 },
+    "facing=south": { "model": "neocomputers:block/mouse", "y": 180 },
+    "facing=west": { "model": "neocomputers:block/mouse", "y": 270 }
+  }
+}

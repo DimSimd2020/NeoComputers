@@ -16,6 +16,9 @@ cmake-build-*/
 .project
 .settings/
 
+# Local Minecraft runtime
+neocore-forge/run/
+
 # C++ / native
 *.o
 *.obj
@@ -28,4 +31,3 @@ cmake-build-*/
 .DS_Store
 Thumbs.db
 *.swp
-

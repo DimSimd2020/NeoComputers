@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "neocomputers:keyboard"
+    },
+    {
+      "item": "neocomputers:mouse"
+    }
+  ],
+  "result": {
+    "id": "neocomputers:keyboard_mouse",
+    "count": 1
+  }
+}
