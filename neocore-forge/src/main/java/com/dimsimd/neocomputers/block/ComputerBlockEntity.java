@@ -6,6 +6,7 @@ import com.dimsimd.neocomputers.component.data.CpuData;
 import com.dimsimd.neocomputers.component.data.MotherboardData;
 import com.dimsimd.neocomputers.component.data.RamData;
 import com.dimsimd.neocomputers.component.data.StorageData;
+import com.dimsimd.neocomputers.item.ItemDeferredRegister;
 import com.dimsimd.neocomputers.menu.ComputerMenu;
 import com.dimsimd.neocomputers.vm.NativeVmRuntime;
 import java.util.ArrayList;
@@ -265,7 +266,7 @@ public final class ComputerBlockEntity extends BlockEntity implements Container,
         }
         storageSlot = ensureRuntimeStorage(storageSlot);
 
-        long createdVm = NativeVmRuntime.createVm(VM_MEMORY_MEGABYTES, storageSlot.data().capacityMb(), storageSlot.data().diskImage());
+        long createdVm = NativeVmRuntime.createVm(VM_MEMORY_MEGABYTES, storageSlot.data().capacityMb(), storageSlot.data().diskImage(), hasNetworkCard());
         if (createdVm == 0L) {
             throw new IllegalStateException("Native create_vm returned NULL for computer at " + worldPosition);
         }
@@ -401,6 +402,15 @@ public final class ComputerBlockEntity extends BlockEntity implements Container,
             }
         }
         return count;
+    }
+
+    private boolean hasNetworkCard() {
+        for (int i = ComputerMenu.PCIE_SLOT_START; i < ComputerMenu.PCIE_SLOT_START + ComputerMenu.PCIE_SLOT_COUNT; i++) {
+            if (items.get(i).is(ItemDeferredRegister.NETWORK_CARD.get())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void writeStorageData(int slot, StorageData storageData) {

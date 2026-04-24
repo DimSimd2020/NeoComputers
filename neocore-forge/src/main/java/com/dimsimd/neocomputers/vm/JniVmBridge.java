@@ -5,6 +5,11 @@ public final class JniVmBridge implements VmBridge {
     public native long createVm(int memorySizeMb, int diskSizeMb, String diskImage);
 
     @Override
+    public long createVm(int memorySizeMb, int diskSizeMb, String diskImage, boolean networkEnabled) {
+        return createVm(memorySizeMb, diskSizeMb, diskImage);
+    }
+
+    @Override
     public native void tickVm(long handle);
 
     @Override

@@ -5,6 +5,8 @@ public interface VmBridge {
 
     long createVm(int memorySizeMb, int diskSizeMb, String diskImage);
 
+    long createVm(int memorySizeMb, int diskSizeMb, String diskImage, boolean networkEnabled);
+
     void tickVm(long handle);
 
     void submitCommand(long handle, String command);

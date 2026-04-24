@@ -216,11 +216,15 @@ public final class NativeVmRuntime {
     }
 
     public static long createVm(int memorySizeMb, int diskSizeMb, String diskImage) {
+        return createVm(memorySizeMb, diskSizeMb, diskImage, false);
+    }
+
+    public static long createVm(int memorySizeMb, int diskSizeMb, String diskImage, boolean networkEnabled) {
         if (!available) {
             return VmBridge.NULL_HANDLE;
         }
         if (backend == Backend.TINY) {
-            return TinyVmRuntime.createVm(memorySizeMb, diskSizeMb, diskImage);
+            return TinyVmRuntime.createVm(memorySizeMb, diskSizeMb, diskImage, networkEnabled);
         }
         if (backend == Backend.QEMU) {
             return QemuVmRuntime.createVm(memorySizeMb, diskSizeMb, diskImage);
