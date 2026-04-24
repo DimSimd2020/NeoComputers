@@ -4,13 +4,18 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import org.luaj.vm2.Globals;
+import org.luaj.vm2.LuaError;
+import org.luaj.vm2.LuaValue;
+import org.luaj.vm2.Varargs;
+import org.luaj.vm2.lib.VarArgFunction;
+import org.luaj.vm2.lib.jse.JsePlatform;
 import org.slf4j.Logger;
 
 final class TinyVmRuntime {
@@ -214,7 +219,7 @@ final class TinyVmRuntime {
         private void dispatch(String commandName, List<String> tokens, String rawCommand) {
             switch (commandName) {
                 case "install" -> installCommand(tokens);
-                case "help" -> appendLine("commands: ls cd pwd mkdir rm cp mv touch find cat less head tail grep ps top htop kill df du free uname ping chmod sudo echo lua run write mem uptime clear reboot shutdown");
+                case "help" -> appendLine("commands: ls cd pwd mkdir rm cp mv touch find file cat less head tail grep ps top htop kill df du free uname ping chmod sudo echo lua run write mem uptime clear reboot shutdown");
                 case "ls" -> ls(tokens);
                 case "cd" -> cd(tokens);
                 case "pwd" -> appendLine(cwd);
@@ -224,6 +229,7 @@ final class TinyVmRuntime {
                 case "mv" -> mv(tokens);
                 case "touch" -> touch(tokens);
                 case "find" -> find(tokens);
+                case "file" -> file(tokens);
                 case "cat" -> cat(tokens);
                 case "less" -> less(tokens);
                 case "head" -> head(tokens);
@@ -270,14 +276,15 @@ final class TinyVmRuntime {
             mkdirInternal("/etc");
             mkdirInternal("/home");
             mkdirInternal("/tmp");
-            putFile("/etc/motd", "Welcome to NeoTiny.", "rw-r--r--");
-            putFile("/bin/hello", "PRINT Hello from NeoTiny bytecode\nPRINT This program is stored on the memory card", "rwxr-xr-x");
-            putFile("/home/readme", "NeoTiny is a compact VM runtime for NeoComputers.", "rw-r--r--");
-            putFile("/home/demo.lua", "print(\"hello from lua\")\nx = 2 + 3\nif x == 5 then\nprint(\"if ok\")\nelse\nprint(\"if failed\")\nend\nfunction add(a, b)\nreturn a + b\nend\nprint(add(7, 8))\nfor i = 1, 3 do\nprint(i)\nend\nwhile x < 8 do\nx = x + 1\nend\nprint(x)", "rw-r--r--");
+            putFile("/etc/motd.txt", "Welcome to NeoTiny.", "rw-r--r--");
+            putFile("/bin/hello.nvm", "PRINT Hello from NeoTiny bytecode\nPRINT This program is stored on the memory card", "rwxr-xr-x");
+            putFile("/home/readme.txt", "NeoTiny is a compact VM runtime for NeoComputers.", "rw-r--r--");
+            putFile("/lib/lua/hello.lua", "local M = {}\nfunction M.message(name)\n  return \"hello, \" .. name\nend\nreturn M", "rw-r--r--");
+            putFile("/home/demo.lua", "local hello = require(\"hello\")\nprint(hello.message(\"lua\"))\nlocal rows = { 1, 2, 3 }\nlocal sum = 0\nfor _, value in ipairs(rows) do\n  sum = sum + value\nend\nif sum == 6 then\n  print(\"tables ok\")\nend\nwritefile(\"/home/lua-output.txt\", \"sum=\" .. sum)\nprint(readfile(\"/home/lua-output.txt\"))", "rw-r--r--");
             cwd = "/home";
             appendLine("Formatting /dev/card0...");
             appendLine("Installing " + OS_NAME + "...");
-            appendLine("Installed. Try: run /bin/hello or lua /home/demo.lua");
+            appendLine("Installed. Try: run /bin/hello.nvm or lua /home/demo.lua");
         }
 
         private void ls(List<String> tokens) {
@@ -398,6 +405,24 @@ final class TinyVmRuntime {
                 }
                 if (nameFilter == null || fileName(path).contains(nameFilter)) {
                     appendLine(path);
+                }
+            }
+        }
+
+        private void file(List<String> tokens) {
+            if (tokens.size() < 2) {
+                appendLine("file: missing file operand");
+                return;
+            }
+            for (int i = 1; i < tokens.size(); i++) {
+                String path = normalizePath(tokens.get(i));
+                FsEntry entry = fs.get(path);
+                if (entry == null) {
+                    appendLine(path + ": cannot open");
+                } else if (entry.directory()) {
+                    appendLine(path + ": directory");
+                } else {
+                    appendLine(path + ": " + fileType(path));
                 }
             }
         }
@@ -628,9 +653,14 @@ final class TinyVmRuntime {
                 appendLine("usage: lua <file>");
                 return;
             }
-            FsEntry entry = fileEntry(tokens.get(1), "lua");
+            String path = normalizePath(tokens.get(1));
+            if (!path.endsWith(".lua")) {
+                appendLine("lua: scripts must use .lua extension");
+                return;
+            }
+            FsEntry entry = fileEntry(path, "lua");
             if (entry != null) {
-                new LuaSubset(entry.content()).execute();
+                new LuaRuntime(path, entry.content()).execute();
             }
         }
 
@@ -905,6 +935,31 @@ final class TinyVmRuntime {
             return slash < 0 ? path : path.substring(slash + 1);
         }
 
+        private String fileType(String path) {
+            if (path.endsWith(".lua")) {
+                return "Lua script";
+            }
+            if (path.endsWith(".nvm")) {
+                return "NeoTiny bytecode script";
+            }
+            if (path.endsWith(".txt")) {
+                return "plain text";
+            }
+            if (path.endsWith(".log")) {
+                return "log text";
+            }
+            if (path.endsWith(".cfg") || path.endsWith(".conf")) {
+                return "configuration text";
+            }
+            return "data";
+        }
+
+        private String scriptDirectory(String path) {
+            String normalizedPath = normalizePath(path);
+            int slash = normalizedPath.lastIndexOf('/');
+            return slash <= 0 ? "/" : normalizedPath.substring(0, slash);
+        }
+
         private void readFileRecord(String value) {
             String[] parts = value.split(":", 3);
             if (parts.length != 3) {
@@ -953,350 +1008,174 @@ final class TinyVmRuntime {
             return line.substring(0, 33) + "...";
         }
 
-        private final class LuaSubset {
+        private final class LuaRuntime {
+            private final String scriptPath;
             private final String source;
-            private final Map<String, Integer> globals = new HashMap<>();
-            private final Map<String, LuaFunction> functions = new HashMap<>();
-            private int executed;
+            private final Map<String, LuaValue> loadedModules = new LinkedHashMap<>();
 
-            private LuaSubset(String source) {
+            private LuaRuntime(String scriptPath, String source) {
+                this.scriptPath = scriptPath;
                 this.source = source;
             }
 
             private void execute() {
-                List<String> lines = sourceLines(source);
-                executeRange(lines, 0, lines.size(), globals);
+                Globals globals = JsePlatform.standardGlobals();
+                installInstructionBudget(globals);
+                restrictHostLibraries(globals);
+                installVmLibraries(globals);
+                try {
+                    globals.load(source, scriptPath).call();
+                } catch (LuaError exception) {
+                    appendLine("lua: " + exception.getMessage());
+                } catch (RuntimeException exception) {
+                    appendLine("lua: runtime error: " + exception.getMessage());
+                }
             }
 
-            private LuaResult executeRange(List<String> lines, int start, int end, Map<String, Integer> scope) {
-                for (int i = start; i < end; i++) {
-                    if (!consumeBudget()) {
-                        return LuaResult.none();
-                    }
-                    String line = lines.get(i);
-                    if (line.startsWith("print(") && line.endsWith(")")) {
-                        printExpression(line.substring(6, line.length() - 1).trim(), scope);
-                        continue;
-                    }
-                    if (line.startsWith("if ") && line.endsWith(" then")) {
-                        IfBlock block = findIfBlock(lines, i, end);
-                        int branchStart;
-                        int branchEnd;
-                        if (evaluateCondition(line.substring(3, line.length() - 5).trim(), scope)) {
-                            branchStart = i + 1;
-                            branchEnd = block.elseIndex() < 0 ? block.endIndex() : block.elseIndex();
-                        } else if (block.elseIndex() >= 0) {
-                            branchStart = block.elseIndex() + 1;
-                            branchEnd = block.endIndex();
-                        } else {
-                            branchStart = block.endIndex();
-                            branchEnd = block.endIndex();
+            private void installInstructionBudget(Globals globals) {
+                try {
+                    globals.load("debug.sethook(function() error('instruction budget exceeded') end, '', 100000)", "budget").call();
+                } catch (LuaError ignored) {
+                }
+            }
+
+            private void restrictHostLibraries(Globals globals) {
+                globals.set("debug", LuaValue.NIL);
+                globals.set("io", LuaValue.NIL);
+                globals.set("os", LuaValue.NIL);
+                globals.set("luajava", LuaValue.NIL);
+                LuaValue packageTable = LuaValue.tableOf();
+                packageTable.set("loaded", LuaValue.tableOf());
+                globals.set("package", packageTable);
+            }
+
+            private void installVmLibraries(Globals globals) {
+                globals.set("print", new VarArgFunction() {
+                    @Override
+                    public Varargs invoke(Varargs args) {
+                        List<String> values = new ArrayList<>();
+                        for (int i = 1; i <= args.narg(); i++) {
+                            values.add(args.arg(i).tojstring());
                         }
-                        LuaResult result = executeRange(lines, branchStart, branchEnd, scope);
-                        if (result.returned()) {
-                            return result;
+                        appendLine(String.join("\t", values));
+                        return LuaValue.NONE;
+                    }
+                });
+                globals.set("readfile", new VarArgFunction() {
+                    @Override
+                    public Varargs invoke(Varargs args) {
+                        FsEntry entry = fs.get(resolveVmPath(args.checkjstring(1)));
+                        return entry == null || entry.directory() ? LuaValue.NIL : LuaValue.valueOf(entry.content());
+                    }
+                });
+                globals.set("writefile", new VarArgFunction() {
+                    @Override
+                    public Varargs invoke(Varargs args) {
+                        putFile(resolveVmPath(args.checkjstring(1)), args.checkjstring(2), "rw-r--r--");
+                        return LuaValue.TRUE;
+                    }
+                });
+                globals.set("appendfile", new VarArgFunction() {
+                    @Override
+                    public Varargs invoke(Varargs args) {
+                        String path = resolveVmPath(args.checkjstring(1));
+                        FsEntry current = fs.get(path);
+                        String prefix = current == null || current.directory() || current.content().isEmpty() ? "" : current.content() + "\n";
+                        putFile(path, prefix + args.checkjstring(2), current == null ? "rw-r--r--" : current.permissions());
+                        return LuaValue.TRUE;
+                    }
+                });
+                globals.set("listdir", new VarArgFunction() {
+                    @Override
+                    public Varargs invoke(Varargs args) {
+                        String path = args.narg() >= 1 ? resolveVmPath(args.checkjstring(1)) : cwd;
+                        LuaValue table = LuaValue.tableOf();
+                        int index = 1;
+                        for (String child : directChildren(path)) {
+                            table.set(index++, LuaValue.valueOf(child));
                         }
-                        i = block.endIndex();
-                        continue;
+                        return table;
                     }
-                    if (line.startsWith("while ") && line.endsWith(" do")) {
-                        int blockEnd = findBlockEnd(lines, i, end);
-                        String condition = line.substring(6, line.length() - 3).trim();
-                        while (evaluateCondition(condition, scope)) {
-                            if (!consumeBudget()) {
-                                return LuaResult.none();
-                            }
-                            LuaResult result = executeRange(lines, i + 1, blockEnd, scope);
-                            if (result.returned()) {
-                                return result;
-                            }
+                });
+                globals.set("exists", new VarArgFunction() {
+                    @Override
+                    public Varargs invoke(Varargs args) {
+                        return LuaValue.valueOf(fs.containsKey(resolveVmPath(args.checkjstring(1))));
+                    }
+                });
+                globals.set("isdir", new VarArgFunction() {
+                    @Override
+                    public Varargs invoke(Varargs args) {
+                        FsEntry entry = fs.get(resolveVmPath(args.checkjstring(1)));
+                        return LuaValue.valueOf(entry != null && entry.directory());
+                    }
+                });
+                globals.set("dofile", new VarArgFunction() {
+                    @Override
+                    public Varargs invoke(Varargs args) {
+                        return loadLuaFile(args.checkjstring(1), globals).invoke();
+                    }
+                });
+                globals.set("loadfile", new VarArgFunction() {
+                    @Override
+                    public Varargs invoke(Varargs args) {
+                        return loadLuaFile(args.checkjstring(1), globals);
+                    }
+                });
+                globals.set("require", new VarArgFunction() {
+                    @Override
+                    public Varargs invoke(Varargs args) {
+                        String module = args.checkjstring(1);
+                        String path = resolveModulePath(module);
+                        LuaValue cached = loadedModules.get(path);
+                        if (cached != null) {
+                            return cached;
                         }
-                        i = blockEnd;
-                        continue;
+                        Varargs result = loadLuaFile(path, globals).invoke();
+                        LuaValue moduleValue = result.narg() == 0 || result.arg1().isnil() ? LuaValue.TRUE : result.arg1();
+                        loadedModules.put(path, moduleValue);
+                        globals.get("package").get("loaded").set(module, moduleValue);
+                        return moduleValue;
                     }
-                    if (line.startsWith("for ") && line.endsWith(" do")) {
-                        int blockEnd = findBlockEnd(lines, i, end);
-                        LuaResult result = executeForLoop(line.substring(4, line.length() - 3).trim(), lines, i + 1, blockEnd, scope);
-                        if (result.returned()) {
-                            return result;
-                        }
-                        i = blockEnd;
-                        continue;
-                    }
-                    if (line.startsWith("function ")) {
-                        int blockEnd = findBlockEnd(lines, i, end);
-                        defineFunction(line.substring(9).trim(), lines.subList(i + 1, blockEnd));
-                        i = blockEnd;
-                        continue;
-                    }
-                    if (line.startsWith("return ")) {
-                        return LuaResult.value(evaluateNumber(line.substring(7).trim(), scope));
-                    }
-                    int assignmentIndex = assignmentIndex(line);
-                    if (assignmentIndex > 0) {
-                        String name = line.substring(0, assignmentIndex).trim();
-                        scope.put(name, evaluateNumber(line.substring(assignmentIndex + 1).trim(), scope));
-                        continue;
-                    }
-                    if (isFunctionCall(line)) {
-                        callFunction(line, scope);
-                        continue;
-                    }
-                    if (line.equals("else") || line.equals("end")) {
-                        appendLine("lua: unexpected " + line);
-                    } else {
-                        appendLine("lua: unsupported statement: " + line);
-                    }
-                }
-                return LuaResult.none();
+                });
             }
 
-            private LuaResult executeForLoop(String header, List<String> lines, int bodyStart, int bodyEnd, Map<String, Integer> scope) {
-                int equals = header.indexOf('=');
-                if (equals <= 0) {
-                    appendLine("lua: bad for statement");
-                    return LuaResult.none();
+            private LuaValue loadLuaFile(String rawPath, Globals globals) {
+                String path = resolveLuaPath(rawPath);
+                FsEntry entry = fs.get(path);
+                if (entry == null || entry.directory()) {
+                    throw new LuaError("cannot open " + path);
                 }
-                String variable = header.substring(0, equals).trim();
-                String[] parts = header.substring(equals + 1).split(",");
-                if (parts.length < 2 || parts.length > 3) {
-                    appendLine("lua: bad for range");
-                    return LuaResult.none();
-                }
-                int value = evaluateNumber(parts[0].trim(), scope);
-                int limit = evaluateNumber(parts[1].trim(), scope);
-                int step = parts.length == 3 ? evaluateNumber(parts[2].trim(), scope) : 1;
-                if (step == 0) {
-                    appendLine("lua: for step cannot be 0");
-                    return LuaResult.none();
-                }
-                while (step > 0 ? value <= limit : value >= limit) {
-                    if (!consumeBudget()) {
-                        return LuaResult.none();
-                    }
-                    scope.put(variable, value);
-                    LuaResult result = executeRange(lines, bodyStart, bodyEnd, scope);
-                    if (result.returned()) {
-                        return result;
-                    }
-                    value += step;
-                }
-                return LuaResult.none();
+                return globals.load(entry.content(), path);
             }
 
-            private void defineFunction(String header, List<String> body) {
-                int open = header.indexOf('(');
-                int close = header.lastIndexOf(')');
-                if (open <= 0 || close <= open) {
-                    appendLine("lua: bad function declaration");
-                    return;
+            private String resolveLuaPath(String rawPath) {
+                String path = resolveVmPath(rawPath);
+                if (!path.endsWith(".lua")) {
+                    throw new LuaError("scripts must use .lua extension: " + path);
                 }
-                String name = header.substring(0, open).trim();
-                List<String> params = splitArguments(header.substring(open + 1, close));
-                functions.put(name, new LuaFunction(params, List.copyOf(body)));
+                return path;
             }
 
-            private int callFunction(String call, Map<String, Integer> callerScope) {
-                int open = call.indexOf('(');
-                int close = call.lastIndexOf(')');
-                String name = call.substring(0, open).trim();
-                LuaFunction function = functions.get(name);
-                if (function == null) {
-                    appendLine("lua: unknown function: " + name);
-                    return 0;
+            private String resolveModulePath(String module) {
+                if (module.endsWith(".lua") || module.contains("/") || module.contains("\\")) {
+                    return resolveLuaPath(module);
                 }
-                List<String> args = splitArguments(call.substring(open + 1, close));
-                Map<String, Integer> localScope = new HashMap<>(globals);
-                for (int i = 0; i < function.params().size(); i++) {
-                    int value = i < args.size() ? evaluateNumber(args.get(i), callerScope) : 0;
-                    localScope.put(function.params().get(i), value);
-                }
-                LuaResult result = executeRange(function.body(), 0, function.body().size(), localScope);
-                return result.returned() ? result.value() : 0;
-            }
-
-            private void printExpression(String expression, Map<String, Integer> scope) {
-                if ((expression.startsWith("\"") && expression.endsWith("\"")) || (expression.startsWith("'") && expression.endsWith("'"))) {
-                    appendLine(expression.substring(1, expression.length() - 1));
-                } else {
-                    appendLine(Integer.toString(evaluateNumber(expression, scope)));
-                }
-            }
-
-            private boolean evaluateCondition(String condition, Map<String, Integer> scope) {
-                for (String operator : List.of("==", "~=", "!=", ">=", "<=", ">", "<")) {
-                    int index = condition.indexOf(operator);
-                    if (index > 0) {
-                        int left = evaluateNumber(condition.substring(0, index).trim(), scope);
-                        int right = evaluateNumber(condition.substring(index + operator.length()).trim(), scope);
-                        return switch (operator) {
-                            case "==" -> left == right;
-                            case "~=", "!=" -> left != right;
-                            case ">=" -> left >= right;
-                            case "<=" -> left <= right;
-                            case ">" -> left > right;
-                            case "<" -> left < right;
-                            default -> false;
-                        };
+                String relativePath = module.replace('.', '/') + ".lua";
+                for (String candidate : List.of(scriptDirectory(scriptPath) + "/" + relativePath, "/lib/lua/" + relativePath, cwd + "/" + relativePath)) {
+                    String normalized = normalizePath(candidate);
+                    FsEntry entry = fs.get(normalized);
+                    if (entry != null && !entry.directory()) {
+                        return normalized;
                     }
                 }
-                return evaluateNumber(condition, scope) != 0;
+                throw new LuaError("module not found: " + module);
             }
 
-            private int evaluateNumber(String expression, Map<String, Integer> scope) {
-                String trimmed = expression.trim();
-                if (isFunctionCall(trimmed)) {
-                    return callFunction(trimmed, scope);
-                }
-                int result = 0;
-                int sign = 1;
-                for (String token : trimmed.replace("+", " + ").replace("-", " - ").split("\\s+")) {
-                    if (token.isBlank()) {
-                        continue;
-                    }
-                    if (token.equals("+")) {
-                        sign = 1;
-                    } else if (token.equals("-")) {
-                        sign = -1;
-                    } else {
-                        result += sign * (scope.containsKey(token) ? scope.get(token) : parseInt(token));
-                        sign = 1;
-                    }
-                }
-                return result;
-            }
-
-            private IfBlock findIfBlock(List<String> lines, int start, int end) {
-                int depth = 0;
-                int elseIndex = -1;
-                for (int i = start + 1; i < end; i++) {
-                    String line = lines.get(i);
-                    if (opensBlock(line)) {
-                        depth++;
-                    } else if (line.equals("end")) {
-                        if (depth == 0) {
-                            return new IfBlock(elseIndex, i);
-                        }
-                        depth--;
-                    } else if (line.equals("else") && depth == 0) {
-                        elseIndex = i;
-                    }
-                }
-                appendLine("lua: missing end");
-                return new IfBlock(elseIndex, end);
-            }
-
-            private int findBlockEnd(List<String> lines, int start, int end) {
-                int depth = 0;
-                for (int i = start + 1; i < end; i++) {
-                    String line = lines.get(i);
-                    if (opensBlock(line)) {
-                        depth++;
-                    } else if (line.equals("end")) {
-                        if (depth == 0) {
-                            return i;
-                        }
-                        depth--;
-                    }
-                }
-                appendLine("lua: missing end");
-                return end;
-            }
-
-            private boolean opensBlock(String line) {
-                return (line.startsWith("if ") && line.endsWith(" then"))
-                    || (line.startsWith("while ") && line.endsWith(" do"))
-                    || (line.startsWith("for ") && line.endsWith(" do"))
-                    || line.startsWith("function ");
-            }
-
-            private int assignmentIndex(String line) {
-                for (int i = 0; i < line.length(); i++) {
-                    if (line.charAt(i) != '=') {
-                        continue;
-                    }
-                    char previous = i == 0 ? 0 : line.charAt(i - 1);
-                    char next = i == line.length() - 1 ? 0 : line.charAt(i + 1);
-                    if (previous != '<' && previous != '>' && previous != '~' && previous != '!' && next != '=') {
-                        return i;
-                    }
-                }
-                return -1;
-            }
-
-            private boolean isFunctionCall(String line) {
-                int open = line.indexOf('(');
-                return open > 0 && line.endsWith(")") && Character.isJavaIdentifierStart(line.charAt(0));
-            }
-
-            private List<String> sourceLines(String rawSource) {
-                List<String> lines = new ArrayList<>();
-                for (String rawLine : rawSource.split("\\R")) {
-                    String line = rawLine.trim();
-                    if (!line.isEmpty() && !line.startsWith("--")) {
-                        lines.add(line);
-                    }
-                }
-                return lines;
-            }
-
-            private List<String> splitArguments(String value) {
-                if (value == null || value.isBlank()) {
-                    return List.of();
-                }
-                List<String> result = new ArrayList<>();
-                StringBuilder current = new StringBuilder();
-                boolean quoted = false;
-                char quote = 0;
-                for (int i = 0; i < value.length(); i++) {
-                    char ch = value.charAt(i);
-                    if (quoted) {
-                        current.append(ch);
-                        if (ch == quote) {
-                            quoted = false;
-                        }
-                    } else if (ch == '"' || ch == '\'') {
-                        quoted = true;
-                        quote = ch;
-                        current.append(ch);
-                    } else if (ch == ',') {
-                        result.add(current.toString().trim());
-                        current.setLength(0);
-                    } else {
-                        current.append(ch);
-                    }
-                }
-                if (!current.isEmpty()) {
-                    result.add(current.toString().trim());
-                }
-                return result;
-            }
-
-            private boolean consumeBudget() {
-                executed++;
-                if (executed > 512) {
-                    appendLine("lua: instruction budget exceeded");
-                    return false;
-                }
-                return true;
+            private String resolveVmPath(String rawPath) {
+                return normalizePath(rawPath);
             }
         }
-    }
-
-    private record LuaFunction(List<String> params, List<String> body) {
-    }
-
-    private record LuaResult(boolean returned, int value) {
-        private static LuaResult none() {
-            return new LuaResult(false, 0);
-        }
-
-        private static LuaResult value(int value) {
-            return new LuaResult(true, value);
-        }
-    }
-
-    private record IfBlock(int elseIndex, int endIndex) {
     }
 
     private record FsEntry(boolean directory, String content, String permissions) {
