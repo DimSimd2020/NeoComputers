@@ -72,6 +72,11 @@ final class TinyVmRuntime {
         return vm == null ? "" : vm.terminalSnapshot();
     }
 
+    static String prompt(long handle) {
+        TinyVm vm = VMS.get(handle);
+        return vm == null ? "NeoBIOS>" : vm.prompt();
+    }
+
     static String framebufferSnapshot(long handle) {
         TinyVm vm = VMS.get(handle);
         return vm == null ? "" : vm.framebufferSnapshot();
@@ -212,7 +217,7 @@ final class TinyVmRuntime {
                 return;
             }
 
-            appendLine("> " + trimmed);
+            appendLine(prompt() + " " + trimmed);
             dispatch(commandName, tokens, trimmed);
         }
 
@@ -750,6 +755,13 @@ final class TinyVmRuntime {
 
         private String terminalSnapshot() {
             return String.join("\n", terminalLines);
+        }
+
+        private String prompt() {
+            if (installedOs.isBlank()) {
+                return "NeoBIOS>";
+            }
+            return "root@neotiny:" + (cwd.equals("/") ? "/" : cwd) + "#";
         }
 
         private String framebufferSnapshot() {

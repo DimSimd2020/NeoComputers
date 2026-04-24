@@ -294,6 +294,16 @@ public final class NativeVmRuntime {
         return readString(handle, BRIDGE::terminalSnapshot, "terminalSnapshot");
     }
 
+    public static String shellPrompt(long handle) {
+        if (backend == Backend.TINY) {
+            return TinyVmRuntime.prompt(handle);
+        }
+        if (backend == Backend.QEMU) {
+            return installedOs(handle).isBlank() ? "NeoBIOS>" : "root@qemu:~#";
+        }
+        return installedOs(handle).isBlank() ? "NeoBIOS>" : "root@neocomputer:~#";
+    }
+
     public static String framebufferSnapshot(long handle) {
         if (backend == Backend.TINY) {
             return TinyVmRuntime.framebufferSnapshot(handle);

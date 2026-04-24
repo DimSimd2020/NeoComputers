@@ -8,6 +8,7 @@ import com.dimsimd.neocomputers.menu.KeyboardMouseMenu;
 import com.dimsimd.neocomputers.network.KeyboardInputPayload;
 import com.mojang.blaze3d.platform.InputConstants;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -28,6 +29,9 @@ public final class KeyboardMouseScreen extends AbstractContainerScreen<KeyboardM
     private static final int MAX_CAPTURED_CHARS = 160;
     private String capturedInput = "";
     private int cursorPosition = 0;
+    private final List<String> commandHistory = new ArrayList<>();
+    private int historyIndex = -1;
+    private int scrollOffset = 0;
     private MonitorWall monitorWall = new MonitorWall(1, 1);
 
     public KeyboardMouseScreen(KeyboardMouseMenu menu, Inventory playerInventory, Component title) {
@@ -153,13 +157,32 @@ public final class KeyboardMouseScreen extends AbstractContainerScreen<KeyboardM
             cursorPosition = capturedInput.length();
             return true;
         }
+        if (keyCode == InputConstants.KEY_UP) {
+            recallHistory(-1);
+            return true;
+        }
+        if (keyCode == InputConstants.KEY_DOWN) {
+            recallHistory(1);
+            return true;
+        }
+        if (keyCode == InputConstants.KEY_PAGEUP) {
+            scrollOffset += 4;
+            return true;
+        }
+        if (keyCode == InputConstants.KEY_PAGEDOWN) {
+            scrollOffset = Math.max(0, scrollOffset - 4);
+            return true;
+        }
         if (keyCode == InputConstants.KEY_RETURN) {
             String command = capturedInput.trim();
             if (!command.isEmpty()) {
                 PacketDistributor.sendToServer(new KeyboardInputPayload(menu.inputPos(), command));
+                appendHistory(command);
+                scrollOffset = 0;
             }
             capturedInput = "";
             cursorPosition = 0;
+            historyIndex = -1;
             return true;
         }
         return true;
@@ -174,6 +197,19 @@ public final class KeyboardMouseScreen extends AbstractContainerScreen<KeyboardM
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (scrollY > 0) {
+            scrollOffset += 3;
+            return true;
+        }
+        if (scrollY < 0) {
+            scrollOffset = Math.max(0, scrollOffset - 3);
+            return true;
+        }
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+    }
+
     private void insertInput(String text) {
         capturedInput = capturedInput.substring(0, cursorPosition) + text + capturedInput.substring(cursorPosition);
         cursorPosition += text.length();
@@ -181,6 +217,27 @@ public final class KeyboardMouseScreen extends AbstractContainerScreen<KeyboardM
             capturedInput = capturedInput.substring(capturedInput.length() - MAX_CAPTURED_CHARS);
             cursorPosition = Math.min(cursorPosition, capturedInput.length());
         }
+    }
+
+    private void appendHistory(String command) {
+        if (commandHistory.isEmpty() || !commandHistory.get(commandHistory.size() - 1).equals(command)) {
+            commandHistory.add(command);
+        }
+        if (commandHistory.size() > 64) {
+            commandHistory.remove(0);
+        }
+    }
+
+    private void recallHistory(int direction) {
+        if (commandHistory.isEmpty()) {
+            return;
+        }
+        if (historyIndex < 0) {
+            historyIndex = commandHistory.size();
+        }
+        historyIndex = Math.max(0, Math.min(commandHistory.size(), historyIndex + direction));
+        capturedInput = historyIndex >= commandHistory.size() ? "" : commandHistory.get(historyIndex);
+        cursorPosition = capturedInput.length();
     }
 
     private void renderConsoleStatus(GuiGraphics guiGraphics, String title, String message) {
@@ -192,16 +249,20 @@ public final class KeyboardMouseScreen extends AbstractContainerScreen<KeyboardM
     }
 
     private void renderTerminal(GuiGraphics guiGraphics, List<String> terminalLines, int x, int y, int width, int maxLines) {
-        int firstLine = Math.max(0, terminalLines.size() - maxLines);
+        int lastExclusive = Math.max(0, terminalLines.size() - scrollOffset);
+        int firstLine = Math.max(0, lastExclusive - maxLines);
         int lineY = y;
         if (terminalLines.isEmpty()) {
             guiGraphics.drawString(font, "NeoBIOS ready.", x, lineY, 0xFF7C91A4, false);
             guiGraphics.drawString(font, "Type install tiny and press Enter.", x, lineY + 10, 0xFF7C91A4, false);
             return;
         }
-        for (int i = firstLine; i < terminalLines.size(); i++) {
+        for (int i = firstLine; i < lastExclusive; i++) {
             guiGraphics.drawString(font, trimToWidth(terminalLines.get(i), width), x, lineY, 0xFFE6F6FF, false);
             lineY += 10;
+        }
+        if (scrollOffset > 0) {
+            guiGraphics.drawString(font, "[scroll +" + scrollOffset + "]", x + width - 76, y - 14, 0xFF7C91A4, false);
         }
     }
 

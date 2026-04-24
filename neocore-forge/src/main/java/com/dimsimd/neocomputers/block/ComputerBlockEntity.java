@@ -36,7 +36,8 @@ import net.minecraft.world.level.storage.LevelResource;
 
 public final class ComputerBlockEntity extends BlockEntity implements Container, MenuProvider {
     private static final int VM_MEMORY_MEGABYTES = 512;
-    private static final int MAX_TERMINAL_LINES = 24;
+    private static final int MAX_TERMINAL_LINES = 96;
+    private static final int VM_SYNC_INTERVAL_TICKS = 5;
 
     private final NonNullList<ItemStack> items = NonNullList.withSize(ComputerMenu.MACHINE_SLOT_COUNT, ItemStack.EMPTY);
     private long vmHandle = 0L;
@@ -97,6 +98,9 @@ public final class ComputerBlockEntity extends BlockEntity implements Container,
     }
 
     public String prompt() {
+        if (hasVm()) {
+            return NativeVmRuntime.shellPrompt(vmHandle);
+        }
         return hasInstalledOs() ? "root@neocomputer:~#" : "NeoBIOS>";
     }
 
@@ -251,7 +255,7 @@ public final class ComputerBlockEntity extends BlockEntity implements Container,
         ensureVm();
         NativeVmRuntime.tickVm(vmHandle);
         vmSyncTicks++;
-        if (vmSyncTicks >= 20) {
+        if (vmSyncTicks >= VM_SYNC_INTERVAL_TICKS) {
             vmSyncTicks = 0;
             persistVmState();
         }
