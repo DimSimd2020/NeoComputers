@@ -213,6 +213,7 @@ public final class ComputerBlockEntity extends BlockEntity implements Container,
 
     @Override
     protected void saveAdditional(CompoundTag tag, HolderLookup.Provider provider) {
+        persistVmState();
         super.saveAdditional(tag, provider);
         ContainerHelper.saveAllItems(tag, items, provider);
     }

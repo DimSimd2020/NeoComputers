@@ -273,7 +273,7 @@ final class TinyVmRuntime {
             putFile("/etc/motd", "Welcome to NeoTiny.", "rw-r--r--");
             putFile("/bin/hello", "PRINT Hello from NeoTiny bytecode\nPRINT This program is stored on the memory card", "rwxr-xr-x");
             putFile("/home/readme", "NeoTiny is a compact VM runtime for NeoComputers.", "rw-r--r--");
-            putFile("/home/demo.lua", "print(\"hello from lua\")\nx = 2 + 3\nprint(x)", "rw-r--r--");
+            putFile("/home/demo.lua", "print(\"hello from lua\")\nx = 2 + 3\nif x == 5 then\nprint(\"if ok\")\nelse\nprint(\"if failed\")\nend\nfunction add(a, b)\nreturn a + b\nend\nprint(add(7, 8))\nfor i = 1, 3 do\nprint(i)\nend\nwhile x < 8 do\nx = x + 1\nend\nprint(x)", "rw-r--r--");
             cwd = "/home";
             appendLine("Formatting /dev/card0...");
             appendLine("Installing " + OS_NAME + "...");
@@ -955,49 +955,202 @@ final class TinyVmRuntime {
 
         private final class LuaSubset {
             private final String source;
-            private final Map<String, Integer> numbers = new HashMap<>();
+            private final Map<String, Integer> globals = new HashMap<>();
+            private final Map<String, LuaFunction> functions = new HashMap<>();
+            private int executed;
 
             private LuaSubset(String source) {
                 this.source = source;
             }
 
             private void execute() {
-                int executed = 0;
-                for (String rawLine : source.split("\\R")) {
-                    String line = rawLine.trim();
-                    if (line.isEmpty() || line.startsWith("--")) {
+                List<String> lines = sourceLines(source);
+                executeRange(lines, 0, lines.size(), globals);
+            }
+
+            private LuaResult executeRange(List<String> lines, int start, int end, Map<String, Integer> scope) {
+                for (int i = start; i < end; i++) {
+                    if (!consumeBudget()) {
+                        return LuaResult.none();
+                    }
+                    String line = lines.get(i);
+                    if (line.startsWith("print(") && line.endsWith(")")) {
+                        printExpression(line.substring(6, line.length() - 1).trim(), scope);
                         continue;
                     }
-                    if (line.startsWith("print(") && line.endsWith(")")) {
-                        printExpression(line.substring(6, line.length() - 1).trim());
-                    } else if (line.contains("=")) {
-                        int equals = line.indexOf('=');
-                        String name = line.substring(0, equals).trim();
-                        int value = evaluateNumber(line.substring(equals + 1).trim());
-                        numbers.put(name, value);
+                    if (line.startsWith("if ") && line.endsWith(" then")) {
+                        IfBlock block = findIfBlock(lines, i, end);
+                        int branchStart;
+                        int branchEnd;
+                        if (evaluateCondition(line.substring(3, line.length() - 5).trim(), scope)) {
+                            branchStart = i + 1;
+                            branchEnd = block.elseIndex() < 0 ? block.endIndex() : block.elseIndex();
+                        } else if (block.elseIndex() >= 0) {
+                            branchStart = block.elseIndex() + 1;
+                            branchEnd = block.endIndex();
+                        } else {
+                            branchStart = block.endIndex();
+                            branchEnd = block.endIndex();
+                        }
+                        LuaResult result = executeRange(lines, branchStart, branchEnd, scope);
+                        if (result.returned()) {
+                            return result;
+                        }
+                        i = block.endIndex();
+                        continue;
+                    }
+                    if (line.startsWith("while ") && line.endsWith(" do")) {
+                        int blockEnd = findBlockEnd(lines, i, end);
+                        String condition = line.substring(6, line.length() - 3).trim();
+                        while (evaluateCondition(condition, scope)) {
+                            if (!consumeBudget()) {
+                                return LuaResult.none();
+                            }
+                            LuaResult result = executeRange(lines, i + 1, blockEnd, scope);
+                            if (result.returned()) {
+                                return result;
+                            }
+                        }
+                        i = blockEnd;
+                        continue;
+                    }
+                    if (line.startsWith("for ") && line.endsWith(" do")) {
+                        int blockEnd = findBlockEnd(lines, i, end);
+                        LuaResult result = executeForLoop(line.substring(4, line.length() - 3).trim(), lines, i + 1, blockEnd, scope);
+                        if (result.returned()) {
+                            return result;
+                        }
+                        i = blockEnd;
+                        continue;
+                    }
+                    if (line.startsWith("function ")) {
+                        int blockEnd = findBlockEnd(lines, i, end);
+                        defineFunction(line.substring(9).trim(), lines.subList(i + 1, blockEnd));
+                        i = blockEnd;
+                        continue;
+                    }
+                    if (line.startsWith("return ")) {
+                        return LuaResult.value(evaluateNumber(line.substring(7).trim(), scope));
+                    }
+                    int assignmentIndex = assignmentIndex(line);
+                    if (assignmentIndex > 0) {
+                        String name = line.substring(0, assignmentIndex).trim();
+                        scope.put(name, evaluateNumber(line.substring(assignmentIndex + 1).trim(), scope));
+                        continue;
+                    }
+                    if (isFunctionCall(line)) {
+                        callFunction(line, scope);
+                        continue;
+                    }
+                    if (line.equals("else") || line.equals("end")) {
+                        appendLine("lua: unexpected " + line);
                     } else {
                         appendLine("lua: unsupported statement: " + line);
                     }
-                    executed++;
-                    if (executed > 128) {
-                        appendLine("lua: instruction budget exceeded");
-                        return;
-                    }
                 }
+                return LuaResult.none();
             }
 
-            private void printExpression(String expression) {
+            private LuaResult executeForLoop(String header, List<String> lines, int bodyStart, int bodyEnd, Map<String, Integer> scope) {
+                int equals = header.indexOf('=');
+                if (equals <= 0) {
+                    appendLine("lua: bad for statement");
+                    return LuaResult.none();
+                }
+                String variable = header.substring(0, equals).trim();
+                String[] parts = header.substring(equals + 1).split(",");
+                if (parts.length < 2 || parts.length > 3) {
+                    appendLine("lua: bad for range");
+                    return LuaResult.none();
+                }
+                int value = evaluateNumber(parts[0].trim(), scope);
+                int limit = evaluateNumber(parts[1].trim(), scope);
+                int step = parts.length == 3 ? evaluateNumber(parts[2].trim(), scope) : 1;
+                if (step == 0) {
+                    appendLine("lua: for step cannot be 0");
+                    return LuaResult.none();
+                }
+                while (step > 0 ? value <= limit : value >= limit) {
+                    if (!consumeBudget()) {
+                        return LuaResult.none();
+                    }
+                    scope.put(variable, value);
+                    LuaResult result = executeRange(lines, bodyStart, bodyEnd, scope);
+                    if (result.returned()) {
+                        return result;
+                    }
+                    value += step;
+                }
+                return LuaResult.none();
+            }
+
+            private void defineFunction(String header, List<String> body) {
+                int open = header.indexOf('(');
+                int close = header.lastIndexOf(')');
+                if (open <= 0 || close <= open) {
+                    appendLine("lua: bad function declaration");
+                    return;
+                }
+                String name = header.substring(0, open).trim();
+                List<String> params = splitArguments(header.substring(open + 1, close));
+                functions.put(name, new LuaFunction(params, List.copyOf(body)));
+            }
+
+            private int callFunction(String call, Map<String, Integer> callerScope) {
+                int open = call.indexOf('(');
+                int close = call.lastIndexOf(')');
+                String name = call.substring(0, open).trim();
+                LuaFunction function = functions.get(name);
+                if (function == null) {
+                    appendLine("lua: unknown function: " + name);
+                    return 0;
+                }
+                List<String> args = splitArguments(call.substring(open + 1, close));
+                Map<String, Integer> localScope = new HashMap<>(globals);
+                for (int i = 0; i < function.params().size(); i++) {
+                    int value = i < args.size() ? evaluateNumber(args.get(i), callerScope) : 0;
+                    localScope.put(function.params().get(i), value);
+                }
+                LuaResult result = executeRange(function.body(), 0, function.body().size(), localScope);
+                return result.returned() ? result.value() : 0;
+            }
+
+            private void printExpression(String expression, Map<String, Integer> scope) {
                 if ((expression.startsWith("\"") && expression.endsWith("\"")) || (expression.startsWith("'") && expression.endsWith("'"))) {
                     appendLine(expression.substring(1, expression.length() - 1));
                 } else {
-                    appendLine(Integer.toString(evaluateNumber(expression)));
+                    appendLine(Integer.toString(evaluateNumber(expression, scope)));
                 }
             }
 
-            private int evaluateNumber(String expression) {
+            private boolean evaluateCondition(String condition, Map<String, Integer> scope) {
+                for (String operator : List.of("==", "~=", "!=", ">=", "<=", ">", "<")) {
+                    int index = condition.indexOf(operator);
+                    if (index > 0) {
+                        int left = evaluateNumber(condition.substring(0, index).trim(), scope);
+                        int right = evaluateNumber(condition.substring(index + operator.length()).trim(), scope);
+                        return switch (operator) {
+                            case "==" -> left == right;
+                            case "~=", "!=" -> left != right;
+                            case ">=" -> left >= right;
+                            case "<=" -> left <= right;
+                            case ">" -> left > right;
+                            case "<" -> left < right;
+                            default -> false;
+                        };
+                    }
+                }
+                return evaluateNumber(condition, scope) != 0;
+            }
+
+            private int evaluateNumber(String expression, Map<String, Integer> scope) {
+                String trimmed = expression.trim();
+                if (isFunctionCall(trimmed)) {
+                    return callFunction(trimmed, scope);
+                }
                 int result = 0;
                 int sign = 1;
-                for (String token : expression.replace("+", " + ").replace("-", " - ").split("\\s+")) {
+                for (String token : trimmed.replace("+", " + ").replace("-", " - ").split("\\s+")) {
                     if (token.isBlank()) {
                         continue;
                     }
@@ -1006,13 +1159,144 @@ final class TinyVmRuntime {
                     } else if (token.equals("-")) {
                         sign = -1;
                     } else {
-                        result += sign * (numbers.containsKey(token) ? numbers.get(token) : parseInt(token));
+                        result += sign * (scope.containsKey(token) ? scope.get(token) : parseInt(token));
                         sign = 1;
                     }
                 }
                 return result;
             }
+
+            private IfBlock findIfBlock(List<String> lines, int start, int end) {
+                int depth = 0;
+                int elseIndex = -1;
+                for (int i = start + 1; i < end; i++) {
+                    String line = lines.get(i);
+                    if (opensBlock(line)) {
+                        depth++;
+                    } else if (line.equals("end")) {
+                        if (depth == 0) {
+                            return new IfBlock(elseIndex, i);
+                        }
+                        depth--;
+                    } else if (line.equals("else") && depth == 0) {
+                        elseIndex = i;
+                    }
+                }
+                appendLine("lua: missing end");
+                return new IfBlock(elseIndex, end);
+            }
+
+            private int findBlockEnd(List<String> lines, int start, int end) {
+                int depth = 0;
+                for (int i = start + 1; i < end; i++) {
+                    String line = lines.get(i);
+                    if (opensBlock(line)) {
+                        depth++;
+                    } else if (line.equals("end")) {
+                        if (depth == 0) {
+                            return i;
+                        }
+                        depth--;
+                    }
+                }
+                appendLine("lua: missing end");
+                return end;
+            }
+
+            private boolean opensBlock(String line) {
+                return (line.startsWith("if ") && line.endsWith(" then"))
+                    || (line.startsWith("while ") && line.endsWith(" do"))
+                    || (line.startsWith("for ") && line.endsWith(" do"))
+                    || line.startsWith("function ");
+            }
+
+            private int assignmentIndex(String line) {
+                for (int i = 0; i < line.length(); i++) {
+                    if (line.charAt(i) != '=') {
+                        continue;
+                    }
+                    char previous = i == 0 ? 0 : line.charAt(i - 1);
+                    char next = i == line.length() - 1 ? 0 : line.charAt(i + 1);
+                    if (previous != '<' && previous != '>' && previous != '~' && previous != '!' && next != '=') {
+                        return i;
+                    }
+                }
+                return -1;
+            }
+
+            private boolean isFunctionCall(String line) {
+                int open = line.indexOf('(');
+                return open > 0 && line.endsWith(")") && Character.isJavaIdentifierStart(line.charAt(0));
+            }
+
+            private List<String> sourceLines(String rawSource) {
+                List<String> lines = new ArrayList<>();
+                for (String rawLine : rawSource.split("\\R")) {
+                    String line = rawLine.trim();
+                    if (!line.isEmpty() && !line.startsWith("--")) {
+                        lines.add(line);
+                    }
+                }
+                return lines;
+            }
+
+            private List<String> splitArguments(String value) {
+                if (value == null || value.isBlank()) {
+                    return List.of();
+                }
+                List<String> result = new ArrayList<>();
+                StringBuilder current = new StringBuilder();
+                boolean quoted = false;
+                char quote = 0;
+                for (int i = 0; i < value.length(); i++) {
+                    char ch = value.charAt(i);
+                    if (quoted) {
+                        current.append(ch);
+                        if (ch == quote) {
+                            quoted = false;
+                        }
+                    } else if (ch == '"' || ch == '\'') {
+                        quoted = true;
+                        quote = ch;
+                        current.append(ch);
+                    } else if (ch == ',') {
+                        result.add(current.toString().trim());
+                        current.setLength(0);
+                    } else {
+                        current.append(ch);
+                    }
+                }
+                if (!current.isEmpty()) {
+                    result.add(current.toString().trim());
+                }
+                return result;
+            }
+
+            private boolean consumeBudget() {
+                executed++;
+                if (executed > 512) {
+                    appendLine("lua: instruction budget exceeded");
+                    return false;
+                }
+                return true;
+            }
         }
+    }
+
+    private record LuaFunction(List<String> params, List<String> body) {
+    }
+
+    private record LuaResult(boolean returned, int value) {
+        private static LuaResult none() {
+            return new LuaResult(false, 0);
+        }
+
+        private static LuaResult value(int value) {
+            return new LuaResult(true, value);
+        }
+    }
+
+    private record IfBlock(int elseIndex, int endIndex) {
     }
 
     private record FsEntry(boolean directory, String content, String permissions) {
