@@ -3,13 +3,11 @@ package com.dimsimd.neocomputers.vm;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -23,7 +21,6 @@ final class QemuVmRuntime {
     private static final String EXECUTABLE_ENV = "NEOCOMPUTERS_QEMU_EXECUTABLE";
     private static final String ISO_PROPERTY = "neocomputers.qemu.iso";
     private static final String ISO_ENV = "NEOCOMPUTERS_QEMU_ISO";
-    private static final String BUNDLED_ISO_RESOURCE = "/qemu/CorePure64-17.0.iso";
     private static final String DISK_PREFIX = "qemu-file:";
     private static final int MAX_LINES = 48;
     private static final AtomicLong NEXT_HANDLE = new AtomicLong(1L);
@@ -58,9 +55,9 @@ final class QemuVmRuntime {
         }
 
         if (installerIso == null) {
-            logger.warn("QEMU backend enabled without CorePure64 ISO. Set -D{}=<CorePure64.iso> or {}.", ISO_PROPERTY, ISO_ENV);
+            logger.warn("QEMU backend enabled without ISO. Set -D{}=<iso> or {}.", ISO_PROPERTY, ISO_ENV);
         } else {
-            logger.info("QEMU backend will attach CorePure64 ISO '{}'", installerIso);
+            logger.info("QEMU backend will attach ISO '{}'", installerIso);
         }
         logger.info("QEMU backend is active: {}", executable);
         return true;
@@ -110,10 +107,10 @@ final class QemuVmRuntime {
             QemuVm vm = new QemuVm(handle, process, diskPath, diskDescriptor, metadata.installedOs(), metadata.bootCount() + 1);
             if (installerIso == null) {
                 vm.appendLine("QEMU started from disk. No installer ISO configured.");
-                vm.appendLine("Set " + ISO_PROPERTY + " or " + ISO_ENV + " to boot CorePure64.");
+                vm.appendLine("Set " + ISO_PROPERTY + " or " + ISO_ENV + " to boot an ISO.");
             } else {
-                vm.appendLine("QEMU started with bundled CorePure64 17.0 ISO attached.");
-                vm.appendLine("CorePure64 runs from RAM; use Tiny Core tools or mark-installed corepure64 after disk setup.");
+                vm.appendLine("QEMU started with installer ISO attached.");
+                vm.appendLine("Complete guest-side setup, then use mark-installed <name>.");
             }
             VMS.put(handle, vm);
             vm.startReader();
@@ -195,30 +192,10 @@ final class QemuVmRuntime {
             configured = System.getenv(ISO_ENV);
         }
         if (configured == null || configured.isBlank()) {
-            return extractBundledIso();
+            return null;
         }
         Path path = Path.of(configured).toAbsolutePath().normalize();
         return Files.isRegularFile(path) ? path : null;
-    }
-
-    private static Path extractBundledIso() {
-        Path targetPath = Path.of(
-            System.getProperty("java.io.tmpdir"),
-            "neocomputers",
-            "qemu",
-            "CorePure64-17.0.iso"
-        ).toAbsolutePath().normalize();
-
-        try (InputStream input = QemuVmRuntime.class.getResourceAsStream(BUNDLED_ISO_RESOURCE)) {
-            if (input == null) {
-                return null;
-            }
-            Files.createDirectories(targetPath.getParent());
-            Files.copy(input, targetPath, StandardCopyOption.REPLACE_EXISTING);
-            return targetPath;
-        } catch (IOException exception) {
-            return null;
-        }
     }
 
     private static Path parseDiskPath(String diskDescriptor) {
@@ -331,9 +308,9 @@ final class QemuVmRuntime {
             String normalized = trimmed.toLowerCase(Locale.ROOT);
             if (normalized.equals("install corepure64") || normalized.equals("install tinycore") || normalized.equals("install alpine")) {
                 if (installerIso == null) {
-                    appendLine("Install blocked: no CorePure64 ISO configured for QEMU.");
+                    appendLine("Install blocked: no ISO configured for QEMU.");
                 } else {
-                    appendLine("CorePure64 ISO is running in QEMU. Use Tiny Core install/frugal tools in serial console.");
+                    appendLine("Installer ISO is running in QEMU. Use guest setup tools in serial console.");
                 }
             }
             if (normalized.equals("mark-installed corepure64") || normalized.equals("mark-installed tinycore") || normalized.equals("mark-installed neolinux")) {

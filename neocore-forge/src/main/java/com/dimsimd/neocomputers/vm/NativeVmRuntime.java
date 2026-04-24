@@ -18,7 +18,7 @@ public final class NativeVmRuntime {
     private static final String BUNDLED_NATIVE_ROOT = "natives";
     private static final VmBridge BRIDGE = new JniVmBridge();
     private static volatile boolean available;
-    private static volatile Backend backend = Backend.QEMU;
+    private static volatile Backend backend = Backend.TINY;
 
     private NativeVmRuntime() {
     }
@@ -28,6 +28,10 @@ public final class NativeVmRuntime {
         Objects.requireNonNull(logger, "logger");
 
         backend = configuredBackend();
+        if (backend == Backend.TINY) {
+            available = TinyVmRuntime.initialize(logger);
+            return available;
+        }
         if (backend == Backend.QEMU) {
             available = QemuVmRuntime.initialize(logger);
             return available;
@@ -215,6 +219,9 @@ public final class NativeVmRuntime {
         if (!available) {
             return VmBridge.NULL_HANDLE;
         }
+        if (backend == Backend.TINY) {
+            return TinyVmRuntime.createVm(memorySizeMb, diskSizeMb, diskImage);
+        }
         if (backend == Backend.QEMU) {
             return QemuVmRuntime.createVm(memorySizeMb, diskSizeMb, diskImage);
         }
@@ -227,6 +234,10 @@ public final class NativeVmRuntime {
 
     public static void tickVm(long handle) {
         if (!available || handle == VmBridge.NULL_HANDLE) {
+            return;
+        }
+        if (backend == Backend.TINY) {
+            TinyVmRuntime.tickVm(handle);
             return;
         }
         if (backend == Backend.QEMU) {
@@ -244,6 +255,10 @@ public final class NativeVmRuntime {
         if (!available || handle == VmBridge.NULL_HANDLE) {
             return;
         }
+        if (backend == Backend.TINY) {
+            TinyVmRuntime.submitCommand(handle, command);
+            return;
+        }
         if (backend == Backend.QEMU) {
             QemuVmRuntime.submitCommand(handle, command);
             return;
@@ -256,6 +271,9 @@ public final class NativeVmRuntime {
     }
 
     public static String diskImage(long handle) {
+        if (backend == Backend.TINY) {
+            return TinyVmRuntime.diskImage(handle);
+        }
         if (backend == Backend.QEMU) {
             return QemuVmRuntime.diskImage(handle);
         }
@@ -263,6 +281,9 @@ public final class NativeVmRuntime {
     }
 
     public static String terminalSnapshot(long handle) {
+        if (backend == Backend.TINY) {
+            return TinyVmRuntime.terminalSnapshot(handle);
+        }
         if (backend == Backend.QEMU) {
             return QemuVmRuntime.terminalSnapshot(handle);
         }
@@ -270,6 +291,9 @@ public final class NativeVmRuntime {
     }
 
     public static String framebufferSnapshot(long handle) {
+        if (backend == Backend.TINY) {
+            return TinyVmRuntime.framebufferSnapshot(handle);
+        }
         if (backend == Backend.QEMU) {
             return QemuVmRuntime.framebufferSnapshot(handle);
         }
@@ -277,6 +301,9 @@ public final class NativeVmRuntime {
     }
 
     public static String installedOs(long handle) {
+        if (backend == Backend.TINY) {
+            return TinyVmRuntime.installedOs(handle);
+        }
         if (backend == Backend.QEMU) {
             return QemuVmRuntime.installedOs(handle);
         }
@@ -286,6 +313,9 @@ public final class NativeVmRuntime {
     public static boolean isHalted(long handle) {
         if (!available || handle == VmBridge.NULL_HANDLE) {
             return true;
+        }
+        if (backend == Backend.TINY) {
+            return TinyVmRuntime.isHalted(handle);
         }
         if (backend == Backend.QEMU) {
             return QemuVmRuntime.isHalted(handle);
@@ -301,6 +331,9 @@ public final class NativeVmRuntime {
         if (!available || handle == VmBridge.NULL_HANDLE) {
             return 0;
         }
+        if (backend == Backend.TINY) {
+            return TinyVmRuntime.bootCount(handle);
+        }
         if (backend == Backend.QEMU) {
             return QemuVmRuntime.bootCount(handle);
         }
@@ -313,6 +346,10 @@ public final class NativeVmRuntime {
 
     public static void destroyVm(long handle) {
         if (!available || handle == VmBridge.NULL_HANDLE) {
+            return;
+        }
+        if (backend == Backend.TINY) {
+            TinyVmRuntime.destroyVm(handle);
             return;
         }
         if (backend == Backend.QEMU) {
@@ -351,10 +388,14 @@ public final class NativeVmRuntime {
         if (configured != null && configured.equalsIgnoreCase("native")) {
             return Backend.NATIVE;
         }
-        return Backend.QEMU;
+        if (configured != null && configured.equalsIgnoreCase("qemu")) {
+            return Backend.QEMU;
+        }
+        return Backend.TINY;
     }
 
     private enum Backend {
+        TINY,
         QEMU,
         NATIVE
     }
