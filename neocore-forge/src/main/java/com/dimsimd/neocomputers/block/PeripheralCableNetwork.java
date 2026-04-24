@@ -2,7 +2,9 @@ package com.dimsimd.neocomputers.block;
 
 import com.dimsimd.neocomputers.NeoComputers;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
@@ -63,6 +65,38 @@ public final class PeripheralCableNetwork {
         return computer == null ? null : computer.getBlockPos();
     }
 
+    public static List<PeripheralBlockEntity> findConnectedPeripherals(Level level, BlockPos origin, PeripheralBlock.PeripheralKind kind) {
+        List<PeripheralBlockEntity> peripherals = new ArrayList<>();
+        Set<BlockPos> addedPeripherals = new HashSet<>();
+        Set<BlockPos> visitedCables = new HashSet<>();
+        ArrayDeque<BlockPos> queue = new ArrayDeque<>();
+
+        collectAdjacentPeripherals(level, origin, kind, peripherals, addedPeripherals);
+        for (Direction direction : Direction.values()) {
+            BlockPos neighborPos = origin.relative(direction);
+            if (level.getBlockState(neighborPos).is(NeoComputers.PERIPHERAL_CABLE_BLOCK.get())) {
+                BlockPos immutable = neighborPos.immutable();
+                visitedCables.add(immutable);
+                queue.add(immutable);
+            }
+        }
+
+        while (!queue.isEmpty() && visitedCables.size() <= MAX_VISITED_CABLES) {
+            BlockPos cablePos = queue.removeFirst();
+            collectAdjacentPeripherals(level, cablePos, kind, peripherals, addedPeripherals);
+            for (Direction direction : Direction.values()) {
+                BlockPos neighborPos = cablePos.relative(direction);
+                if (level.getBlockState(neighborPos).is(NeoComputers.PERIPHERAL_CABLE_BLOCK.get()) && !visitedCables.contains(neighborPos)) {
+                    BlockPos immutable = neighborPos.immutable();
+                    visitedCables.add(immutable);
+                    queue.add(immutable);
+                }
+            }
+        }
+
+        return peripherals;
+    }
+
     @Nullable
     private static ComputerBlockEntity computerAt(Level level, BlockPos pos) {
         BlockEntity blockEntity = level.getBlockEntity(pos);
@@ -70,5 +104,30 @@ public final class PeripheralCableNetwork {
             return computerBlockEntity;
         }
         return null;
+    }
+
+    private static void collectAdjacentPeripherals(
+        Level level,
+        BlockPos origin,
+        PeripheralBlock.PeripheralKind kind,
+        List<PeripheralBlockEntity> peripherals,
+        Set<BlockPos> addedPeripherals
+    ) {
+        for (Direction direction : Direction.values()) {
+            BlockPos neighborPos = origin.relative(direction);
+            if (addedPeripherals.contains(neighborPos)) {
+                continue;
+            }
+            BlockState neighborState = level.getBlockState(neighborPos);
+            if (!(neighborState.getBlock() instanceof PeripheralBlock peripheralBlock) || peripheralBlock.kind() != kind) {
+                continue;
+            }
+            BlockEntity blockEntity = level.getBlockEntity(neighborPos);
+            if (blockEntity instanceof PeripheralBlockEntity peripheralBlockEntity) {
+                BlockPos immutable = neighborPos.immutable();
+                addedPeripherals.add(immutable);
+                peripherals.add(peripheralBlockEntity);
+            }
+        }
     }
 }

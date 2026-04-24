@@ -32,8 +32,8 @@ public final class KeyboardMouseScreen extends AbstractContainerScreen<KeyboardM
 
     public KeyboardMouseScreen(KeyboardMouseMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
-        imageWidth = 248;
-        imageHeight = 188;
+        imageWidth = 340;
+        imageHeight = 230;
         titleLabelX = 10;
         titleLabelY = 8;
         inventoryLabelY = 1000;
@@ -48,23 +48,27 @@ public final class KeyboardMouseScreen extends AbstractContainerScreen<KeyboardM
     @Override
     protected void renderBg(GuiGraphics guiGraphics, float partialTick, int mouseX, int mouseY) {
         guiGraphics.fill(leftPos, topPos, leftPos + imageWidth, topPos + imageHeight, 0xEE11151B);
-        guiGraphics.fill(leftPos + 8, topPos + 24, leftPos + 240, topPos + 134, 0xFF05080D);
+        guiGraphics.fill(leftPos + 8, topPos + 24, leftPos + imageWidth - 8, topPos + imageHeight - 12, 0xFF05080D);
 
         ComputerBlockEntity computer = findLinkedComputer();
-        if (computer == null || !computer.isPowered()) {
-            guiGraphics.drawString(font, "", leftPos + 18, topPos + 44, 0xFFFFFFFF, false);
+        if (computer == null) {
+            renderConsoleStatus(guiGraphics, "NO LINK", "Connect keyboard/mouse to a computer with peripheral cable.");
+            return;
+        }
+        if (!computer.isPowered()) {
+            renderConsoleStatus(guiGraphics, "NO SIGNAL", "Power on the computer case first.");
             return;
         }
 
-        guiGraphics.fill(leftPos + 10, topPos + 26, leftPos + 238, topPos + 132, 0xFF101923);
+        guiGraphics.fill(leftPos + 10, topPos + 26, leftPos + imageWidth - 10, topPos + imageHeight - 14, 0xFF071017);
 
-        int panelWidth = 212;
-        int panelHeight = 78;
+        int panelWidth = 114;
+        int panelHeight = 48;
         int tileWidth = Math.max(12, panelWidth / monitorWall.width());
         int tileHeight = Math.max(12, panelHeight / monitorWall.height());
         int wallWidth = tileWidth * monitorWall.width();
         int wallHeight = tileHeight * monitorWall.height();
-        int wallX = leftPos + 18 + (panelWidth - wallWidth) / 2;
+        int wallX = leftPos + imageWidth - 136 + (panelWidth - wallWidth) / 2;
         int wallY = topPos + 34 + (panelHeight - wallHeight) / 2;
 
         for (int y = 0; y < monitorWall.height(); y++) {
@@ -77,21 +81,16 @@ public final class KeyboardMouseScreen extends AbstractContainerScreen<KeyboardM
         }
 
         String osName = computer.installedOsName();
-        guiGraphics.drawString(font, osName == null ? "NeoBIOS" : osName, leftPos + 18, topPos + 44, osName == null ? 0xFFFFD166 : 0xFF61D9FF, false);
-        guiGraphics.drawString(font, osName == null ? "No OS found. Type: install tiny" : "localhost login: root", leftPos + 18, topPos + 58, 0xFFE6F6FF, false);
+        guiGraphics.drawString(font, "NeoTTY", leftPos + 18, topPos + 34, 0xFF61D9FF, false);
+        guiGraphics.drawString(font, osName == null ? "NeoBIOS - type: install tiny" : osName + " - root session", leftPos + 18, topPos + 48, osName == null ? 0xFFFFD166 : 0xFFE6F6FF, false);
+        guiGraphics.drawString(font, monitorWall.width() + "x" + monitorWall.height() + " monitor wall", leftPos + imageWidth - 136, topPos + 86, 0xFF7C91A4, false);
 
-        int lineY = topPos + 72;
-        List<String> terminalLines = computer.terminalLines();
-        int firstLine = Math.max(0, terminalLines.size() - 4);
-        for (int i = firstLine; i < terminalLines.size(); i++) {
-            guiGraphics.drawString(font, terminalLines.get(i), leftPos + 18, lineY, 0xFFE6F6FF, false);
-            lineY += 10;
-        }
+        renderTerminal(guiGraphics, computer.terminalLines(), leftPos + 18, topPos + 64, imageWidth - 42, 12);
 
-        guiGraphics.drawString(font, "NeoTTY", leftPos + 18, topPos + 113, 0xFF61D9FF, false);
+        guiGraphics.fill(leftPos + 14, topPos + imageHeight - 40, leftPos + imageWidth - 14, topPos + imageHeight - 20, 0xFF0E1822);
+        guiGraphics.fill(leftPos + 14, topPos + imageHeight - 40, leftPos + imageWidth - 14, topPos + imageHeight - 39, 0xFF244257);
         String visibleInput = computer.prompt() + " " + capturedInput.substring(0, cursorPosition) + "_" + capturedInput.substring(cursorPosition);
-        guiGraphics.drawString(font, visibleInput, leftPos + 18, topPos + 144, 0xFFE6F6FF, false);
-        guiGraphics.drawString(font, monitorWall.width() + "x" + monitorWall.height() + " monitor wall", leftPos + 160, topPos + 113, 0xFF7C91A4, false);
+        guiGraphics.drawString(font, trimToWidth(visibleInput, imageWidth - 42), leftPos + 20, topPos + imageHeight - 34, 0xFFE6F6FF, false);
     }
 
     @Override
@@ -182,6 +181,40 @@ public final class KeyboardMouseScreen extends AbstractContainerScreen<KeyboardM
             capturedInput = capturedInput.substring(capturedInput.length() - MAX_CAPTURED_CHARS);
             cursorPosition = Math.min(cursorPosition, capturedInput.length());
         }
+    }
+
+    private void renderConsoleStatus(GuiGraphics guiGraphics, String title, String message) {
+        guiGraphics.fill(leftPos + 10, topPos + 26, leftPos + imageWidth - 10, topPos + imageHeight - 14, 0xFF071017);
+        guiGraphics.drawString(font, title, leftPos + 18, topPos + 42, 0xFFFF7878, false);
+        guiGraphics.drawString(font, trimToWidth(message, imageWidth - 40), leftPos + 18, topPos + 58, 0xFFE6F6FF, false);
+        guiGraphics.drawString(font, "NeoTTY", leftPos + 18, topPos + imageHeight - 48, 0xFF61D9FF, false);
+        guiGraphics.drawString(font, "> " + capturedInput.substring(0, cursorPosition) + "_" + capturedInput.substring(cursorPosition), leftPos + 18, topPos + imageHeight - 34, 0xFF7C91A4, false);
+    }
+
+    private void renderTerminal(GuiGraphics guiGraphics, List<String> terminalLines, int x, int y, int width, int maxLines) {
+        int firstLine = Math.max(0, terminalLines.size() - maxLines);
+        int lineY = y;
+        if (terminalLines.isEmpty()) {
+            guiGraphics.drawString(font, "NeoBIOS ready.", x, lineY, 0xFF7C91A4, false);
+            guiGraphics.drawString(font, "Type install tiny and press Enter.", x, lineY + 10, 0xFF7C91A4, false);
+            return;
+        }
+        for (int i = firstLine; i < terminalLines.size(); i++) {
+            guiGraphics.drawString(font, trimToWidth(terminalLines.get(i), width), x, lineY, 0xFFE6F6FF, false);
+            lineY += 10;
+        }
+    }
+
+    private String trimToWidth(String line, int width) {
+        if (font.width(line) <= width) {
+            return line;
+        }
+        String suffix = "...";
+        int end = line.length();
+        while (end > 0 && font.width(line.substring(0, end) + suffix) > width) {
+            end--;
+        }
+        return line.substring(0, Math.max(0, end)) + suffix;
     }
 
     private void refreshMonitorWall() {

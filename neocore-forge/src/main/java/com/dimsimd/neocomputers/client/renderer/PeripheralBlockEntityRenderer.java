@@ -33,37 +33,42 @@ public final class PeripheralBlockEntityRenderer implements BlockEntityRenderer<
             return;
         }
 
+        List<String> framebufferLines = blockEntity.displayLines();
         ComputerBlockEntity computer = blockEntity.linkedComputer();
         if (computer == null && blockEntity.getLevel() != null) {
             computer = PeripheralCableNetwork.findConnectedComputer(blockEntity.getLevel(), blockEntity.getBlockPos());
         }
-        if (computer == null || !computer.isPowered()) {
-            return;
+        if (framebufferLines.isEmpty()) {
+            if (computer == null) {
+                framebufferLines = List.of("NO SIGNAL", "No linked computer.");
+            } else if (!computer.isPowered()) {
+                framebufferLines = List.of("NO SIGNAL", "Computer is powered off.");
+            } else {
+                framebufferLines = computer.framebufferLines();
+            }
         }
-
-        List<String> framebufferLines = computer.framebufferLines();
 
         Direction facing = blockEntity.getBlockState().getValue(PeripheralBlock.FACING);
         poseStack.pushPose();
         poseStack.translate(0.5D, 0.5D, 0.5D);
         poseStack.mulPose(Axis.YP.rotationDegrees(rotationFor(facing)));
-        poseStack.translate(-0.43D, -0.10D, -0.315D);
-        poseStack.scale(0.006F, -0.006F, 0.006F);
+        poseStack.translate(-0.46D, -0.32D, -0.501D);
+        poseStack.scale(0.005F, -0.005F, 0.005F);
         int lineY = 0;
-        int firstLine = Math.max(0, framebufferLines.size() - 8);
+        int firstLine = Math.max(0, framebufferLines.size() - 12);
         for (int i = firstLine; i < framebufferLines.size(); i++) {
             int color = i == firstLine ? 0x61D9FF : 0xE6F6FF;
-            font.drawInBatch(trimToMonitor(framebufferLines.get(i)), 0.0F, lineY, color, false, poseStack.last().pose(), bufferSource, Font.DisplayMode.POLYGON_OFFSET, 0, packedLight);
-            lineY += 10;
+            font.drawInBatch(trimToMonitor(framebufferLines.get(i)), 0.0F, lineY, color, false, poseStack.last().pose(), bufferSource, Font.DisplayMode.NORMAL, 0, packedLight);
+            lineY += 9;
         }
         poseStack.popPose();
     }
 
     private static String trimToMonitor(String line) {
-        if (line.length() <= 32) {
+        if (line.length() <= 36) {
             return line;
         }
-        return line.substring(0, 29) + "...";
+        return line.substring(0, 33) + "...";
     }
 
     private static float rotationFor(Direction facing) {

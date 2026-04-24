@@ -2,10 +2,14 @@ package com.dimsimd.neocomputers.block;
 
 import com.dimsimd.neocomputers.NeoComputers;
 import com.dimsimd.neocomputers.menu.KeyboardMouseMenu;
+import java.util.ArrayList;
+import java.util.List;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.StringTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
@@ -22,6 +26,8 @@ public final class PeripheralBlockEntity extends BlockEntity implements MenuProv
     private static final String LIGHTING_COLOR_TAG = "LightingColor";
     private static final String LIGHTING_BRIGHTNESS_TAG = "LightingBrightness";
     private static final String LINKED_COMPUTER_TAG = "LinkedComputer";
+    private static final String DISPLAY_LINES_TAG = "DisplayLines";
+    private static final int MAX_DISPLAY_LINES = 16;
     private static final int[] PRESET_COLORS = {
         0x1EA7FF,
         0x8A5CFF,
@@ -33,6 +39,7 @@ public final class PeripheralBlockEntity extends BlockEntity implements MenuProv
 
     private int lightingColor = 0x1EA7FF;
     private int lightingBrightness = 80;
+    private List<String> displayLines = List.of();
     @Nullable
     private BlockPos linkedComputerPos;
 
@@ -111,11 +118,13 @@ public final class PeripheralBlockEntity extends BlockEntity implements MenuProv
 
         BlockPos connectedComputerPos = PeripheralCableNetwork.findConnectedComputerPos(level, worldPosition);
         if (connectedComputerPos == null ? linkedComputerPos == null : connectedComputerPos.equals(linkedComputerPos)) {
+            refreshMonitorDisplayFromLinkedComputer();
             return;
         }
 
         linkedComputerPos = connectedComputerPos;
         syncLighting();
+        refreshMonitorDisplayFromLinkedComputer();
     }
 
     public void setLighting(int rgb, int brightness) {
@@ -146,6 +155,19 @@ public final class PeripheralBlockEntity extends BlockEntity implements MenuProv
         setLighting(PRESET_COLORS[nextIndex], lightingBrightness);
     }
 
+    public List<String> displayLines() {
+        return displayLines;
+    }
+
+    public void setDisplayLines(List<String> lines) {
+        List<String> nextLines = clampDisplayLines(lines);
+        if (displayLines.equals(nextLines)) {
+            return;
+        }
+        displayLines = nextLines;
+        syncLighting();
+    }
+
     @Override
     protected void saveAdditional(CompoundTag tag, HolderLookup.Provider provider) {
         super.saveAdditional(tag, provider);
@@ -154,6 +176,11 @@ public final class PeripheralBlockEntity extends BlockEntity implements MenuProv
         if (linkedComputerPos != null) {
             tag.putLong(LINKED_COMPUTER_TAG, linkedComputerPos.asLong());
         }
+        ListTag displayTag = new ListTag();
+        for (String line : displayLines) {
+            displayTag.add(StringTag.valueOf(line));
+        }
+        tag.put(DISPLAY_LINES_TAG, displayTag);
     }
 
     @Override
@@ -168,6 +195,7 @@ public final class PeripheralBlockEntity extends BlockEntity implements MenuProv
         if (tag.contains(LINKED_COMPUTER_TAG)) {
             linkedComputerPos = BlockPos.of(tag.getLong(LINKED_COMPUTER_TAG));
         }
+        displayLines = readDisplayLines(tag);
     }
 
     @Override
@@ -199,5 +227,41 @@ public final class PeripheralBlockEntity extends BlockEntity implements MenuProv
         if (level != null) {
             level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
         }
+    }
+
+    private void refreshMonitorDisplayFromLinkedComputer() {
+        if (!(getBlockState().getBlock() instanceof PeripheralBlock peripheralBlock) || peripheralBlock.kind() != PeripheralBlock.PeripheralKind.MONITOR) {
+            return;
+        }
+        ComputerBlockEntity computerBlockEntity = linkedComputer();
+        if (computerBlockEntity == null) {
+            setDisplayLines(List.of("NO SIGNAL", "No linked computer."));
+            return;
+        }
+        if (!computerBlockEntity.isPowered()) {
+            setDisplayLines(List.of("NO SIGNAL", "Computer is powered off."));
+            return;
+        }
+        setDisplayLines(computerBlockEntity.framebufferLines());
+    }
+
+    private static List<String> clampDisplayLines(List<String> lines) {
+        if (lines == null || lines.isEmpty()) {
+            return List.of();
+        }
+        int first = Math.max(0, lines.size() - MAX_DISPLAY_LINES);
+        return List.copyOf(lines.subList(first, lines.size()));
+    }
+
+    private static List<String> readDisplayLines(CompoundTag tag) {
+        if (!tag.contains(DISPLAY_LINES_TAG)) {
+            return List.of();
+        }
+        ListTag listTag = tag.getList(DISPLAY_LINES_TAG, 8);
+        List<String> lines = new ArrayList<>();
+        for (int i = 0; i < listTag.size(); i++) {
+            lines.add(listTag.getString(i));
+        }
+        return clampDisplayLines(lines);
     }
 }

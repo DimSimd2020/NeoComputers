@@ -32,12 +32,14 @@ public record KeyboardInputPayload(BlockPos inputPos, String command) implements
             return;
         }
 
-        ComputerBlockEntity computer = linkedComputer(serverPlayer.level(), payload.inputPos());
-        if (computer == null) {
-            return;
-        }
+        context.enqueueWork(() -> {
+            ComputerBlockEntity computer = linkedComputer(serverPlayer.level(), payload.inputPos());
+            if (computer == null) {
+                return;
+            }
 
-        computer.handleTerminalCommand(payload.command());
+            computer.handleTerminalCommand(payload.command());
+        });
     }
 
     private static ComputerBlockEntity linkedComputer(Level level, BlockPos inputPos) {

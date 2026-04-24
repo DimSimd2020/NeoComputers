@@ -192,6 +192,7 @@ public final class ComputerBlockEntity extends BlockEntity implements Container,
             persistVmState();
         } else {
             destroyVm();
+            updateConnectedMonitorDisplays(List.of("NO SIGNAL", "Computer is powered off."));
         }
         return true;
     }
@@ -429,15 +430,18 @@ public final class ComputerBlockEntity extends BlockEntity implements Container,
             return;
         }
 
+        List<String> terminalLines = splitSnapshotLines(NativeVmRuntime.terminalSnapshot(vmHandle));
+        List<String> framebufferLines = splitSnapshotLines(NativeVmRuntime.framebufferSnapshot(vmHandle));
         writeStorageData(
             storageSlot.slot(),
             storageSlot.data().withVmState(
                 NativeVmRuntime.installedOs(vmHandle),
-                splitSnapshotLines(NativeVmRuntime.terminalSnapshot(vmHandle)),
+                terminalLines,
                 NativeVmRuntime.bootCount(vmHandle),
                 NativeVmRuntime.diskImage(vmHandle)
             )
         );
+        updateConnectedMonitorDisplays(framebufferLines);
     }
 
     private void appendStoredSystemLine(String line) {
@@ -466,6 +470,15 @@ public final class ComputerBlockEntity extends BlockEntity implements Container,
         return clampLog(Arrays.stream(snapshot.split("\\R"))
             .filter(line -> !line.isBlank())
             .toList());
+    }
+
+    private void updateConnectedMonitorDisplays(List<String> lines) {
+        if (level == null || level.isClientSide) {
+            return;
+        }
+        for (PeripheralBlockEntity peripheralBlockEntity : PeripheralCableNetwork.findConnectedPeripherals(level, worldPosition, PeripheralBlock.PeripheralKind.MONITOR)) {
+            peripheralBlockEntity.setDisplayLines(lines);
+        }
     }
 
     @Nullable
