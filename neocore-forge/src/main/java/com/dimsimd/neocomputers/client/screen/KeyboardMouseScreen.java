@@ -78,7 +78,7 @@ public final class KeyboardMouseScreen extends AbstractContainerScreen<KeyboardM
 
         String osName = computer.installedOsName();
         guiGraphics.drawString(font, osName == null ? "NeoBIOS" : osName, leftPos + 18, topPos + 44, osName == null ? 0xFFFFD166 : 0xFF61D9FF, false);
-        guiGraphics.drawString(font, osName == null ? "No OS found. Type: install alpine" : "localhost login: root", leftPos + 18, topPos + 58, 0xFFE6F6FF, false);
+        guiGraphics.drawString(font, osName == null ? "No OS found. Type: install corepure64" : "localhost login: root", leftPos + 18, topPos + 58, 0xFFE6F6FF, false);
 
         int lineY = topPos + 72;
         List<String> terminalLines = computer.terminalLines();

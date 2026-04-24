@@ -135,7 +135,7 @@ public final class ComputerBlockEntity extends BlockEntity implements Container,
         if (!hasVm()) {
             ensureVm();
         }
-        NativeVmRuntime.submitCommand(vmHandle, "install alpine");
+        NativeVmRuntime.submitCommand(vmHandle, "install corepure64");
         persistVmState();
         return true;
     }
